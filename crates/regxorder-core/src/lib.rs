@@ -12,7 +12,7 @@ pub use event::{
     ScanCode, SchemaVersion, ScreenSize, ScrollAxis, SpeedMultiplier,
 };
 pub use format::{from_json_str, to_json_pretty, write_json_pretty};
-pub use recording::{Recording, RecordingMetadata};
+pub use recording::{Recording, RecordingActionCounts, RecordingMetadata, RecordingMetrics};
 
 /// The canonical schema version used for regxorder interchange data.
 pub const CURRENT_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(1);

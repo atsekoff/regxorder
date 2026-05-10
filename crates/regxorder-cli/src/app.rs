@@ -1,6 +1,7 @@
 use std::{
     fs::{self, File},
     io::{BufWriter, Write},
+    mem::size_of,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -11,8 +12,8 @@ use std::{
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use regxorder_core::{
     AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, InputAction, InputEvent, KeyDescriptor,
-    Recording, RecordingError, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize,
-    SpeedMultiplier, ValidationError,
+    Recording, RecordingError, RecordingMetadata, RecordingMetrics, ScanCode, SchemaVersion,
+    ScreenSize, SpeedMultiplier, ValidationError,
 };
 use regxorder_win32::{
     RecordingStrategy, WindowsBackendError, play_recording, record_with_strategy,
@@ -178,6 +179,7 @@ fn record_recording_file(
         recording.duration().as_micros(),
         resolved_output_path.display()
     );
+    print_recording_metrics(&recording, &resolved_output_path)?;
 
     Ok(())
 }
@@ -275,6 +277,8 @@ fn inspect_recording(path: &Path) -> Result<(), CliError> {
         println!("last_sequence: {}", last_event.sequence);
     }
 
+    print_recording_metrics(&recording, &resolve_session_input_path(path))?;
+
     Ok(())
 }
 
@@ -292,6 +296,75 @@ fn write_recording(path: &Path, recording: &Recording) -> Result<(), CliError> {
     writer.flush()?;
 
     Ok(())
+}
+
+fn print_recording_metrics(recording: &Recording, path: &Path) -> Result<(), CliError> {
+    let metrics = recording.metrics();
+    let file_size_bytes = fs::metadata(path)?.len();
+    let input_event_size_bytes = size_of::<InputEvent>() as u64;
+    let estimated_event_buffer_bytes = input_event_size_bytes * metrics.total_events as u64;
+    let average_events_per_second = average_events_per_second(&metrics);
+
+    println!("event_size_bytes: {input_event_size_bytes}");
+    println!(
+        "estimated_event_buffer_bytes: {} ({})",
+        estimated_event_buffer_bytes,
+        format_binary_size(estimated_event_buffer_bytes)
+    );
+    println!(
+        "file_size_bytes: {file_size_bytes} ({})",
+        format_binary_size(file_size_bytes)
+    );
+    println!("average_events_per_second: {average_events_per_second:.2}");
+    println!("peak_events_per_second: {}", metrics.peak_events_per_second);
+    println!(
+        "key_pressed_events: {}",
+        metrics.action_counts.key_pressed_events
+    );
+    println!(
+        "key_released_events: {}",
+        metrics.action_counts.key_released_events
+    );
+    println!(
+        "pointer_moved_events: {}",
+        metrics.action_counts.pointer_moved_events
+    );
+    println!(
+        "mouse_button_pressed_events: {}",
+        metrics.action_counts.mouse_button_pressed_events
+    );
+    println!(
+        "mouse_button_released_events: {}",
+        metrics.action_counts.mouse_button_released_events
+    );
+    println!(
+        "mouse_wheel_scrolled_events: {}",
+        metrics.action_counts.mouse_wheel_scrolled_events
+    );
+
+    Ok(())
+}
+
+fn average_events_per_second(metrics: &RecordingMetrics) -> f64 {
+    if metrics.total_events == 0 {
+        return 0.0;
+    }
+
+    let duration_micros = metrics.duration_micros.max(1);
+    metrics.total_events as f64 * 1_000_000.0 / duration_micros as f64
+}
+
+fn format_binary_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+
+    let mut value = bytes as f64;
+    let mut unit_index = 0_usize;
+    while value >= 1024.0 && unit_index < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit_index += 1;
+    }
+
+    format!("{value:.2} {}", UNITS[unit_index])
 }
 
 fn sample_recording(title: Option<&str>) -> Recording {
@@ -373,7 +446,11 @@ fn ensure_parent_directory_exists(path: &Path) -> Result<(), CliError> {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{resolve_session_input_path, resolve_session_output_path, sample_recording};
+    use super::{
+        average_events_per_second, format_binary_size, resolve_session_input_path,
+        resolve_session_output_path, sample_recording,
+    };
+    use regxorder_core::{RecordingActionCounts, RecordingMetrics};
 
     #[test]
     fn built_in_sample_recording_is_valid_and_ordered() {
@@ -408,5 +485,24 @@ mod tests {
             resolved,
             PathBuf::from("sessions").join("does-not-exist.json")
         );
+    }
+
+    #[test]
+    fn average_events_per_second_uses_recording_duration() {
+        let metrics = RecordingMetrics {
+            total_events: 120,
+            duration_micros: 2_000_000,
+            peak_events_per_second: 80,
+            action_counts: RecordingActionCounts::default(),
+        };
+
+        assert_eq!(average_events_per_second(&metrics), 60.0);
+    }
+
+    #[test]
+    fn binary_sizes_are_rendered_in_human_readable_units() {
+        assert_eq!(format_binary_size(56), "56.00 B");
+        assert_eq!(format_binary_size(1_536), "1.50 KiB");
+        assert_eq!(format_binary_size(2_097_152), "2.00 MiB");
     }
 }
