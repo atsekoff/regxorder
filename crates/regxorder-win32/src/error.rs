@@ -1,0 +1,29 @@
+use thiserror::Error;
+
+/// Errors surfaced by the Windows-specific recording and playback backends.
+#[derive(Debug, Error)]
+pub enum WindowsBackendError {
+    #[error("playback was interrupted")]
+    Interrupted,
+
+    #[error(
+        "SendInput submitted {submitted} of {requested} events; playback may be blocked by UIPI or another input filter"
+    )]
+    PartialSend { requested: u32, submitted: u32 },
+
+    #[error("{context} failed: {source}")]
+    Os {
+        context: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+impl WindowsBackendError {
+    pub(crate) fn last_os_error(context: &'static str) -> Self {
+        Self::Os {
+            context,
+            source: std::io::Error::last_os_error(),
+        }
+    }
+}

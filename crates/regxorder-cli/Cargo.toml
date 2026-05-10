@@ -8,4 +8,6 @@ description = "Command-line interface for regxorder"
 [dependencies]
 clap.workspace = true
 regxorder-core = { path = "../regxorder-core" }
+regxorder-win32 = { path = "../regxorder-win32" }
 thiserror.workspace = true
+ctrlc = "3.4"

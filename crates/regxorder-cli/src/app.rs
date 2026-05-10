@@ -1,13 +1,19 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use clap::{Parser, Subcommand, ValueHint};
 use regxorder_core::{
     AbsoluteScreenPoint, DisplayMetadata, EventOffset, InputAction, InputEvent, KeyDescriptor,
     Recording, RecordingError, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize,
+    SpeedMultiplier, ValidationError,
 };
+use regxorder_win32::{WindowsBackendError, play_recording};
 use thiserror::Error;
 
 #[derive(Debug, Parser)]
@@ -43,6 +49,17 @@ enum Command {
         #[arg(long, value_hint = ValueHint::FilePath)]
         input: PathBuf,
     },
+
+    /// Replay a recording file with the Windows playback backend.
+    Play {
+        /// Path to the recording JSON file.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        input: PathBuf,
+
+        /// Playback speed multiplier. Values above 1.0 speed up playback.
+        #[arg(long, default_value_t = 1.0)]
+        speed: f64,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -51,6 +68,12 @@ pub enum CliError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Recording(#[from] RecordingError),
+    #[error(transparent)]
+    Validation(#[from] ValidationError),
+    #[error(transparent)]
+    WindowsBackend(#[from] WindowsBackendError),
+    #[error("failed to install Ctrl+C handler: {0}")]
+    CtrlC(#[from] ctrlc::Error),
 }
 
 pub fn run(cli: Cli) -> Result<(), CliError> {
@@ -58,7 +81,44 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Command::Sample { output, title } => write_sample_recording(&output, title.as_deref()),
         Command::Validate { input } => validate_recording(&input),
         Command::Inspect { input } => inspect_recording(&input),
+        Command::Play { input, speed } => play_recording_file(&input, speed),
     }
+}
+
+fn play_recording_file(path: &Path, speed: f64) -> Result<(), CliError> {
+    let recording = load_recording(path)?;
+    let speed = SpeedMultiplier::new(speed)?;
+    let stop_requested = Arc::new(AtomicBool::new(false));
+    let stop_handler = Arc::clone(&stop_requested);
+
+    ctrlc::set_handler(move || {
+        stop_handler.store(true, Ordering::SeqCst);
+    })?;
+
+    println!(
+        "playing {} events from {} at {}x speed; press Ctrl+C to stop",
+        recording.event_count(),
+        path.display(),
+        speed.get()
+    );
+
+    let report = play_recording(&recording, speed, stop_requested.as_ref())?;
+
+    if report.interrupted {
+        println!(
+            "playback interrupted after {} events and {:.3} ms",
+            report.dispatched_events,
+            report.elapsed.as_secs_f64() * 1_000.0
+        );
+    } else {
+        println!(
+            "playback completed: {} events in {:.3} ms",
+            report.dispatched_events,
+            report.elapsed.as_secs_f64() * 1_000.0
+        );
+    }
+
+    Ok(())
 }
 
 fn write_sample_recording(path: &Path, title: Option<&str>) -> Result<(), CliError> {

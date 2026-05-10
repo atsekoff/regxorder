@@ -7,3 +7,5 @@ description = "Windows backend implementations for regxorder"
 
 [dependencies]
 regxorder-core = { path = "../regxorder-core" }
+thiserror.workspace = true
+windows-sys.workspace = true
