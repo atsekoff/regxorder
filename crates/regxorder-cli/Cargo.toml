@@ -6,4 +6,6 @@ rust-version.workspace = true
 description = "Command-line interface for regxorder"
 
 [dependencies]
+clap.workspace = true
 regxorder-core = { path = "../regxorder-core" }
+thiserror.workspace = true

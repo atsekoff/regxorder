@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CURRENT_SCHEMA_VERSION, ValidationError};
+use crate::{ValidationError, CURRENT_SCHEMA_VERSION};
 
 /// A version marker for the canonical regxorder recording schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

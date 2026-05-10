@@ -1,3 +1,12 @@
+mod app;
+
+use clap::Parser;
+
+use crate::app::{Cli, run};
+
 fn main() {
-    println!("regxorder-cli is scaffolded but not implemented yet.");
+    if let Err(error) = run(Cli::parse()) {
+        eprintln!("error: {error}");
+        std::process::exit(1);
+    }
 }

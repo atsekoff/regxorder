@@ -16,9 +16,9 @@ pub fn to_json_pretty(recording: &Recording) -> Result<String, RecordingError> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        AbsoluteScreenPoint, DisplayMetadata, EventOffset, InputAction, InputEvent, KeyDescriptor,
-        Recording, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize, from_json_str,
-        to_json_pretty,
+        from_json_str, to_json_pretty, AbsoluteScreenPoint, DisplayMetadata, EventOffset,
+        InputAction, InputEvent, KeyDescriptor, Recording, RecordingMetadata, ScanCode,
+        SchemaVersion, ScreenSize,
     };
 
     fn sample_recording() -> Recording {

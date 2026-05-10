@@ -48,6 +48,19 @@ impl Recording {
         &self.events
     }
 
+    /// Returns the number of ordered events stored in the recording.
+    pub fn event_count(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Returns the total relative duration of the recording.
+    pub fn duration(&self) -> crate::EventOffset {
+        self.events
+            .last()
+            .map(|event| event.offset)
+            .unwrap_or_else(|| crate::EventOffset::from_micros(0))
+    }
+
     /// Validates the recording's invariants.
     pub fn validate(&self) -> Result<(), ValidationError> {
         if self.metadata.schema_version != CURRENT_SCHEMA_VERSION {
@@ -202,5 +215,14 @@ mod tests {
                 height: 1440,
             }
         );
+    }
+
+    #[test]
+    fn recording_duration_matches_the_last_event_offset() {
+        let recording =
+            Recording::new(sample_metadata(), sample_events()).expect("sample recording is valid");
+
+        assert_eq!(recording.event_count(), 2);
+        assert_eq!(recording.duration().as_micros(), 12_000);
     }
 }
