@@ -185,6 +185,7 @@ Recommended model details:
 4. Convert raw backend events into the canonical event model as early as possible.
 5. Record monitor and DPI metadata so coordinates can be validated later.
 6. Keep callback paths minimal and hand work off quickly to channels or queues.
+7. Keep both recorder strategies available as named backends. See `docs/recording-backend-strategies.md` for the current strengths, weaknesses, and selection guidance.
 
 ### Playback Architecture
 
@@ -224,6 +225,7 @@ The SDK should eventually cover:
 8. Set or query speed.
 9. Select or inspect backend capabilities.
 10. Query diagnostics such as elevation status and unsupported target conditions.
+11. Select a recording strategy without changing the canonical recording format.
 
 The CLI should remain a thin wrapper over the SDK and should not reimplement domain rules.
 

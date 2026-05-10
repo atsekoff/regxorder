@@ -7,13 +7,15 @@ use std::{
     },
 };
 
-use clap::{Parser, Subcommand, ValueHint};
+use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use regxorder_core::{
     AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, InputAction, InputEvent, KeyDescriptor,
     Recording, RecordingError, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize,
     SpeedMultiplier, ValidationError,
 };
-use regxorder_win32::{WindowsBackendError, play_recording, record_with_low_level_hooks};
+use regxorder_win32::{
+    RecordingStrategy, WindowsBackendError, play_recording, record_with_strategy,
+};
 use thiserror::Error;
 
 const SESSION_DIRECTORY_NAME: &str = "sessions";
@@ -63,7 +65,7 @@ enum Command {
         speed: f64,
     },
 
-    /// Record keyboard and mouse input using the current hook-based backend.
+    /// Record keyboard and mouse input using the selected Windows recording strategy.
     Record {
         /// Path to write the captured recording JSON file. A bare filename is written under sessions/.
         #[arg(long, value_hint = ValueHint::FilePath)]
@@ -76,7 +78,26 @@ enum Command {
         /// Optional duration limit in seconds. If omitted, recording stops on Ctrl+C.
         #[arg(long)]
         duration_seconds: Option<f64>,
+
+        /// Recording strategy to use for input capture.
+        #[arg(long, value_enum, default_value_t = RecordingStrategyArgument::RawInput)]
+        strategy: RecordingStrategyArgument,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum RecordingStrategyArgument {
+    RawInput,
+    LowLevelHooks,
+}
+
+impl RecordingStrategyArgument {
+    const fn into_backend_strategy(self) -> RecordingStrategy {
+        match self {
+            Self::RawInput => RecordingStrategy::RawInput,
+            Self::LowLevelHooks => RecordingStrategy::LowLevelHooks,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -105,7 +126,8 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             output,
             title,
             duration_seconds,
-        } => record_recording_file(&output, title, duration_seconds),
+            strategy,
+        } => record_recording_file(&output, title, duration_seconds, strategy),
     }
 }
 
@@ -113,10 +135,12 @@ fn record_recording_file(
     output: &Path,
     title: Option<String>,
     duration_seconds: Option<f64>,
+    strategy: RecordingStrategyArgument,
 ) -> Result<(), CliError> {
     let resolved_output_path = resolve_session_output_path(output);
     let stop_requested = Arc::new(AtomicBool::new(false));
     let stop_handler = Arc::clone(&stop_requested);
+    let recording_strategy = strategy.into_backend_strategy();
 
     ctrlc::set_handler(move || {
         stop_handler.store(true, Ordering::SeqCst);
@@ -134,14 +158,17 @@ fn record_recording_file(
         });
 
         println!(
-            "recording with low-level hooks for up to {:.3} seconds; press Ctrl+C to stop early",
-            seconds
+            "recording with {} for up to {:.3} seconds; press Ctrl+C to stop early",
+            recording_strategy, seconds
         );
     } else {
-        println!("recording with low-level hooks; press Ctrl+C to stop");
+        println!(
+            "recording with {}; press Ctrl+C to stop",
+            recording_strategy
+        );
     }
 
-    let recording = record_with_low_level_hooks(stop_requested.as_ref(), title)?;
+    let recording = record_with_strategy(recording_strategy, stop_requested.as_ref(), title)?;
     let encoded = recording.to_json_pretty()?;
     ensure_parent_directory_exists(&resolved_output_path)?;
     fs::write(&resolved_output_path, encoded)?;

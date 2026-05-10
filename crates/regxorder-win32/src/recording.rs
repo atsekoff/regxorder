@@ -1,5 +1,7 @@
+mod raw_input;
+
 use std::{
-    mem,
+    fmt, mem,
     sync::{
         Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -30,19 +32,42 @@ use windows_sys::Win32::{
 
 use crate::WindowsBackendError;
 
-const RECORD_STOP_MESSAGE: u32 = WM_APP + 1;
+pub use raw_input::record_with_raw_input;
 
-static HOOK_STATE: OnceLock<Mutex<Option<Arc<HookSharedState>>>> = OnceLock::new();
+pub(super) const RECORD_STOP_MESSAGE: u32 = WM_APP + 1;
 
-struct HookSharedState {
+static LOW_LEVEL_HOOK_STATE: OnceLock<Mutex<Option<Arc<RecorderState>>>> = OnceLock::new();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordingStrategy {
+    RawInput,
+    LowLevelHooks,
+}
+
+impl RecordingStrategy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RawInput => "raw-input",
+            Self::LowLevelHooks => "low-level-hooks",
+        }
+    }
+}
+
+impl fmt::Display for RecordingStrategy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+pub(super) struct RecorderState {
     started_at: Instant,
     display: DisplayMetadata,
     next_sequence: AtomicU64,
     events: Mutex<Vec<InputEvent>>,
 }
 
-impl HookSharedState {
-    fn new(display: DisplayMetadata) -> Self {
+impl RecorderState {
+    pub(super) fn new(display: DisplayMetadata) -> Self {
         Self {
             started_at: Instant::now(),
             display,
@@ -51,7 +76,7 @@ impl HookSharedState {
         }
     }
 
-    fn record_action(&self, action: InputAction) {
+    pub(super) fn record_action(&self, action: InputAction) {
         let elapsed = self.started_at.elapsed().as_micros();
         let elapsed_time_micros = u64::try_from(elapsed).unwrap_or(u64::MAX);
         let event = InputEvent {
@@ -65,7 +90,16 @@ impl HookSharedState {
         }
     }
 
-    fn take_events(&self) -> Result<Vec<InputEvent>, WindowsBackendError> {
+    pub(super) fn record_actions<I>(&self, actions: I)
+    where
+        I: IntoIterator<Item = InputAction>,
+    {
+        for action in actions {
+            self.record_action(action);
+        }
+    }
+
+    pub(super) fn take_events(&self) -> Result<Vec<InputEvent>, WindowsBackendError> {
         let mut events = self
             .events
             .lock()
@@ -74,11 +108,39 @@ impl HookSharedState {
     }
 }
 
+pub fn record_with_strategy(
+    strategy: RecordingStrategy,
+    stop_requested: &AtomicBool,
+    title: Option<String>,
+) -> Result<Recording, WindowsBackendError> {
+    match strategy {
+        RecordingStrategy::RawInput => record_with_raw_input(stop_requested, title),
+        RecordingStrategy::LowLevelHooks => record_with_low_level_hooks(stop_requested, title),
+    }
+}
+
 /// Records input using low-level keyboard and mouse hooks until `stop_requested` becomes true.
 pub fn record_with_low_level_hooks(
     stop_requested: &AtomicBool,
     title: Option<String>,
 ) -> Result<Recording, WindowsBackendError> {
+    record_with_worker(stop_requested, title, run_low_level_hook_thread)
+}
+
+pub(super) fn record_with_worker<F>(
+    stop_requested: &AtomicBool,
+    title: Option<String>,
+    worker: F,
+) -> Result<Recording, WindowsBackendError>
+where
+    F: FnOnce(
+            DisplayMetadata,
+            mpsc::SyncSender<u32>,
+            mpsc::SyncSender<Result<(), WindowsBackendError>>,
+        ) -> Result<Vec<InputEvent>, WindowsBackendError>
+        + Send
+        + 'static,
+{
     let display = capture_display_metadata();
     let metadata = RecordingMetadata {
         schema_version: SchemaVersion::new(1),
@@ -90,8 +152,7 @@ pub fn record_with_low_level_hooks(
     let (startup_tx, startup_rx) = mpsc::sync_channel(1);
 
     let thread_display = display.clone();
-    let recorder_thread =
-        thread::spawn(move || run_hook_thread(thread_display, thread_id_tx, startup_tx));
+    let recorder_thread = thread::spawn(move || worker(thread_display, thread_id_tx, startup_tx));
 
     let thread_id = thread_id_rx
         .recv()
@@ -119,7 +180,7 @@ pub fn record_with_low_level_hooks(
     Recording::new(metadata, events).map_err(WindowsBackendError::from)
 }
 
-fn run_hook_thread(
+fn run_low_level_hook_thread(
     display: DisplayMetadata,
     thread_id_tx: mpsc::SyncSender<u32>,
     startup_tx: mpsc::SyncSender<Result<(), WindowsBackendError>>,
@@ -129,8 +190,8 @@ fn run_hook_thread(
         .send(thread_id)
         .map_err(|_| WindowsBackendError::Internal("failed to send recorder thread id"))?;
 
-    let shared_state = Arc::new(HookSharedState::new(display));
-    set_hook_state(Some(Arc::clone(&shared_state)))?;
+    let shared_state = Arc::new(RecorderState::new(display));
+    set_low_level_hook_state(Some(Arc::clone(&shared_state)))?;
 
     let mut keyboard_hook: HHOOK = std::ptr::null_mut();
     let mut mouse_hook: HHOOK = std::ptr::null_mut();
@@ -176,7 +237,7 @@ fn run_hook_thread(
             UnhookWindowsHookEx(mouse_hook);
         }
     }
-    set_hook_state(None)?;
+    set_low_level_hook_state(None)?;
 
     if result.is_err() {
         let _ = startup_tx.send(Err(WindowsBackendError::Internal(
@@ -187,7 +248,7 @@ fn run_hook_thread(
     result
 }
 
-fn message_loop() -> Result<(), WindowsBackendError> {
+pub(super) fn message_loop() -> Result<(), WindowsBackendError> {
     let mut message: MSG = unsafe { mem::zeroed() };
 
     loop {
@@ -222,7 +283,7 @@ fn capture_display_metadata() -> DisplayMetadata {
     }
 }
 
-fn post_stop_message(thread_id: u32) -> Result<(), WindowsBackendError> {
+pub(super) fn post_stop_message(thread_id: u32) -> Result<(), WindowsBackendError> {
     let posted = unsafe { PostThreadMessageW(thread_id, RECORD_STOP_MESSAGE, 0, 0) };
     if posted == 0 {
         Err(WindowsBackendError::last_os_error("PostThreadMessageW"))
@@ -231,20 +292,24 @@ fn post_stop_message(thread_id: u32) -> Result<(), WindowsBackendError> {
     }
 }
 
-fn hook_state_slot() -> &'static Mutex<Option<Arc<HookSharedState>>> {
-    HOOK_STATE.get_or_init(|| Mutex::new(None))
+fn low_level_hook_state_slot() -> &'static Mutex<Option<Arc<RecorderState>>> {
+    LOW_LEVEL_HOOK_STATE.get_or_init(|| Mutex::new(None))
 }
 
-fn set_hook_state(state: Option<Arc<HookSharedState>>) -> Result<(), WindowsBackendError> {
-    let mut slot = hook_state_slot()
+fn set_low_level_hook_state(state: Option<Arc<RecorderState>>) -> Result<(), WindowsBackendError> {
+    let mut slot = low_level_hook_state_slot()
         .lock()
         .map_err(|_| WindowsBackendError::Internal("hook state mutex was poisoned"))?;
     *slot = state;
     Ok(())
 }
 
-fn active_hook_state() -> Option<Arc<HookSharedState>> {
-    hook_state_slot().lock().ok()?.as_ref().map(Arc::clone)
+fn active_low_level_hook_state() -> Option<Arc<RecorderState>> {
+    low_level_hook_state_slot()
+        .lock()
+        .ok()?
+        .as_ref()
+        .map(Arc::clone)
 }
 
 unsafe extern "system" fn keyboard_hook_proc(
@@ -253,7 +318,7 @@ unsafe extern "system" fn keyboard_hook_proc(
     l_param: LPARAM,
 ) -> LRESULT {
     if n_code == HC_ACTION as i32 {
-        if let Some(state) = active_hook_state() {
+        if let Some(state) = active_low_level_hook_state() {
             let info = unsafe { &*(l_param as *const KBDLLHOOKSTRUCT) };
             if let Some(action) = translate_keyboard_message(w_param as u32, info) {
                 state.record_action(action);
@@ -270,7 +335,7 @@ unsafe extern "system" fn mouse_hook_proc(
     l_param: LPARAM,
 ) -> LRESULT {
     if n_code == HC_ACTION as i32 {
-        if let Some(state) = active_hook_state() {
+        if let Some(state) = active_low_level_hook_state() {
             let info = unsafe { &*(l_param as *const MSLLHOOKSTRUCT) };
             if let Some(action) = translate_mouse_message(w_param as u32, info, &state.display) {
                 state.record_action(action);
@@ -378,8 +443,8 @@ mod tests {
     use regxorder_core::InputAction;
 
     use super::{
-        capture_display_metadata, record_with_low_level_hooks, translate_keyboard_message,
-        translate_mouse_message,
+        RecordingStrategy, capture_display_metadata, record_with_low_level_hooks,
+        translate_keyboard_message, translate_mouse_message,
     };
 
     fn sample_display() -> DisplayMetadata {
@@ -492,5 +557,11 @@ mod tests {
 
         assert_eq!(recording.event_count(), 0);
         assert_eq!(recording.metadata().title.as_deref(), Some("empty"));
+    }
+
+    #[test]
+    fn recording_strategy_names_are_stable_for_cli_and_docs() {
+        assert_eq!(RecordingStrategy::RawInput.as_str(), "raw-input");
+        assert_eq!(RecordingStrategy::LowLevelHooks.as_str(), "low-level-hooks");
     }
 }
