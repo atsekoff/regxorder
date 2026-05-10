@@ -1,11 +1,11 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "type": "command",
-        "windows": "pwsh -NoProfile -File .github/hooks/scripts/ensure-rust-format-before-commit.ps1",
-        "timeout": 30
-      }
-    ]
-  }
+    "hooks": {
+        "PreToolUse": [
+            {
+                "type": "command",
+                "windows": "pwsh -NoProfile -File .github/hooks/scripts/ensure-rust-format-before-commit.ps1",
+                "timeout": 30
+            }
+        ]
+    }
 }

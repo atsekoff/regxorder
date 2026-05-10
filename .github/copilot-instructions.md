@@ -24,8 +24,9 @@
 
 ## Workflow
 
-- Before any commit, run the appropriate formatter for changed code and stage the formatted result.
+- Before any commit, run the appropriate formatters for every changed file and stage the formatted result.
 - For Rust code, the baseline formatting command is `cargo fmt --all`.
+- Do not commit while a staged file also has unstaged save-time or formatter changes. Restage every affected file first.
 
 ## Testing
 

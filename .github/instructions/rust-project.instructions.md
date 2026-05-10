@@ -16,3 +16,4 @@ applyTo: "**/*.rs"
 - Add or update unit tests with behavior changes. Tests should document the behavior as clearly as the code does.
 - When adding public APIs, consider doctests or examples if they improve discoverability without duplicating existing tests.
 - Before committing Rust changes, run `cargo fmt --all` and stage the formatted result.
+- If save-time or non-Rust formatters also rewrote staged files, restage those files before committing.
