@@ -1,5 +1,6 @@
 use std::{
-    fs,
+    fs::{self, File},
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -169,9 +170,7 @@ fn record_recording_file(
     }
 
     let recording = record_with_strategy(recording_strategy, stop_requested.as_ref(), title)?;
-    let encoded = recording.to_json_pretty()?;
-    ensure_parent_directory_exists(&resolved_output_path)?;
-    fs::write(&resolved_output_path, encoded)?;
+    write_recording(&resolved_output_path, &recording)?;
 
     println!(
         "recorded {} events over {} us to {}",
@@ -223,10 +222,7 @@ fn play_recording_file(path: &Path, speed: f64) -> Result<(), CliError> {
 fn write_sample_recording(path: &Path, title: Option<&str>) -> Result<(), CliError> {
     let resolved_output_path = resolve_session_output_path(path);
     let recording = sample_recording(title);
-    let encoded = recording.to_json_pretty()?;
-
-    ensure_parent_directory_exists(&resolved_output_path)?;
-    fs::write(&resolved_output_path, encoded)?;
+    write_recording(&resolved_output_path, &recording)?;
 
     println!(
         "wrote sample recording to {} ({} events, {} us)",
@@ -285,6 +281,17 @@ fn inspect_recording(path: &Path) -> Result<(), CliError> {
 fn load_recording(path: &Path) -> Result<Recording, CliError> {
     let input = fs::read_to_string(path)?;
     Ok(Recording::from_json_str(&input)?)
+}
+
+fn write_recording(path: &Path, recording: &Recording) -> Result<(), CliError> {
+    ensure_parent_directory_exists(path)?;
+
+    let output_file = File::create(path)?;
+    let mut writer = BufWriter::new(output_file);
+    recording.write_json_pretty(&mut writer)?;
+    writer.flush()?;
+
+    Ok(())
 }
 
 fn sample_recording(title: Option<&str>) -> Recording {

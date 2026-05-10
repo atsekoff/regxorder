@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 
 use crate::{
     CURRENT_SCHEMA_VERSION, DisplayMetadata, InputEvent, RecordingError, SchemaVersion,
@@ -111,6 +112,14 @@ impl Recording {
     /// Serializes the recording as canonical pretty-printed JSON.
     pub fn to_json_pretty(&self) -> Result<String, RecordingError> {
         crate::to_json_pretty(self)
+    }
+
+    /// Serializes the recording as canonical pretty-printed JSON into the provided writer.
+    pub fn write_json_pretty<W>(&self, writer: W) -> Result<(), RecordingError>
+    where
+        W: Write,
+    {
+        crate::write_json_pretty(self, writer)
     }
 
     /// Parses a validated recording from canonical JSON.

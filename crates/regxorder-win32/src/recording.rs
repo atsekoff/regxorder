@@ -27,6 +27,8 @@ use thread_message_loop::post_stop_message;
 pub use low_level_hooks::record_with_low_level_hooks;
 pub use raw_input::record_with_raw_input;
 
+const INITIAL_RECORDED_EVENT_CAPACITY: usize = 16_384;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordingStrategy {
     RawInput,
@@ -61,21 +63,24 @@ impl RecorderState {
             started_at: Instant::now(),
             display,
             next_sequence: AtomicU64::new(0),
-            events: Mutex::new(Vec::new()),
+            events: Mutex::new(Vec::with_capacity(INITIAL_RECORDED_EVENT_CAPACITY)),
+        }
+    }
+
+    fn next_recorded_event(&self, action: InputAction) -> InputEvent {
+        let elapsed = self.started_at.elapsed().as_micros();
+        let elapsed_time_micros = u64::try_from(elapsed).unwrap_or(u64::MAX);
+
+        InputEvent {
+            sequence: self.next_sequence.fetch_add(1, Ordering::SeqCst),
+            elapsed_time: ElapsedTime::from_micros(elapsed_time_micros),
+            action,
         }
     }
 
     pub(super) fn record_action(&self, action: InputAction) {
-        let elapsed = self.started_at.elapsed().as_micros();
-        let elapsed_time_micros = u64::try_from(elapsed).unwrap_or(u64::MAX);
-        let event = InputEvent {
-            sequence: self.next_sequence.fetch_add(1, Ordering::SeqCst),
-            elapsed_time: ElapsedTime::from_micros(elapsed_time_micros),
-            action,
-        };
-
         if let Ok(mut events) = self.events.lock() {
-            events.push(event);
+            events.push(self.next_recorded_event(action));
         }
     }
 
@@ -83,8 +88,16 @@ impl RecorderState {
     where
         I: IntoIterator<Item = InputAction>,
     {
-        for action in actions {
-            self.record_action(action);
+        if let Ok(mut events) = self.events.lock() {
+            let action_iterator = actions.into_iter();
+            let (_, upper_bound) = action_iterator.size_hint();
+            if let Some(action_count) = upper_bound {
+                events.reserve(action_count);
+            }
+
+            for action in action_iterator {
+                events.push(self.next_recorded_event(action));
+            }
         }
     }
 

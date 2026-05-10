@@ -11,7 +11,7 @@ pub use event::{
     MonitorDescriptor, MouseButton, NormalizedCoordinate, NormalizedScreenPoint, PointerPosition,
     ScanCode, SchemaVersion, ScreenSize, ScrollAxis, SpeedMultiplier,
 };
-pub use format::{from_json_str, to_json_pretty};
+pub use format::{from_json_str, to_json_pretty, write_json_pretty};
 pub use recording::{Recording, RecordingMetadata};
 
 /// The canonical schema version used for regxorder interchange data.

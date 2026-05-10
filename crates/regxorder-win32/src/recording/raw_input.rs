@@ -37,8 +37,42 @@ const WINDOW_CLASS_ALREADY_EXISTS: i32 = 1410;
 const GENERIC_DESKTOP_USAGE_PAGE: u16 = 0x01;
 const GENERIC_MOUSE_USAGE: u16 = 0x02;
 const GENERIC_KEYBOARD_USAGE: u16 = 0x06;
+const INITIAL_RAW_INPUT_BUFFER_CAPACITY: usize = 256;
 
-static RAW_INPUT_STATE: OnceLock<Mutex<Option<Arc<RecorderState>>>> = OnceLock::new();
+static RAW_INPUT_STATE: OnceLock<Mutex<Option<Arc<RawInputRecordingState>>>> = OnceLock::new();
+
+struct RawInputRecordingState {
+    recorder_state: RecorderState,
+    raw_input_buffer: Mutex<Vec<u8>>,
+}
+
+impl RawInputRecordingState {
+    fn new(display: DisplayMetadata) -> Self {
+        Self {
+            recorder_state: RecorderState::new(display),
+            raw_input_buffer: Mutex::new(Vec::with_capacity(INITIAL_RAW_INPUT_BUFFER_CAPACITY)),
+        }
+    }
+
+    fn display(&self) -> &DisplayMetadata {
+        &self.recorder_state.display
+    }
+
+    fn record_action(&self, action: InputAction) {
+        self.recorder_state.record_action(action);
+    }
+
+    fn record_actions<I>(&self, actions: I)
+    where
+        I: IntoIterator<Item = InputAction>,
+    {
+        self.recorder_state.record_actions(actions);
+    }
+
+    fn take_events(&self) -> Result<Vec<InputEvent>, WindowsBackendError> {
+        self.recorder_state.take_events()
+    }
+}
 
 pub fn record_with_raw_input(
     stop_requested: &AtomicBool,
@@ -57,7 +91,7 @@ fn run_raw_input_thread(
         .send(thread_id)
         .map_err(|_| WindowsBackendError::Internal("failed to send recorder thread id"))?;
 
-    let shared_state = Arc::new(RecorderState::new(display));
+    let shared_state = Arc::new(RawInputRecordingState::new(display));
     set_raw_input_state(Some(Arc::clone(&shared_state)))?;
 
     let mut window_handle: HWND = std::ptr::null_mut();
@@ -182,10 +216,7 @@ unsafe extern "system" fn raw_input_window_proc(
     match message {
         WM_INPUT => {
             if let Some(state) = active_raw_input_state() {
-                if let Some(actions) = read_raw_input_actions(l_param as HRAWINPUT, &state.display)
-                {
-                    state.record_actions(actions);
-                }
+                record_raw_input_packet(l_param as HRAWINPUT, &state);
             }
 
             0
@@ -194,10 +225,7 @@ unsafe extern "system" fn raw_input_window_proc(
     }
 }
 
-fn read_raw_input_actions(
-    raw_input_handle: HRAWINPUT,
-    display: &DisplayMetadata,
-) -> Option<Vec<InputAction>> {
+fn record_raw_input_packet(raw_input_handle: HRAWINPUT, state: &RawInputRecordingState) {
     let mut raw_input_size = 0_u32;
     let header_size = mem::size_of::<RAWINPUTHEADER>() as u32;
     let query_result = unsafe {
@@ -210,10 +238,15 @@ fn read_raw_input_actions(
         )
     };
     if query_result == u32::MAX || raw_input_size == 0 {
-        return None;
+        return;
     }
 
-    let mut raw_input_buffer = vec![0_u8; raw_input_size as usize];
+    let mut raw_input_buffer = match state.raw_input_buffer.lock() {
+        Ok(raw_input_buffer) => raw_input_buffer,
+        Err(_) => return,
+    };
+    raw_input_buffer.resize(raw_input_size as usize, 0);
+
     let read_result = unsafe {
         GetRawInputData(
             raw_input_handle,
@@ -224,18 +257,20 @@ fn read_raw_input_actions(
         )
     };
     if read_result == u32::MAX {
-        return None;
+        return;
     }
 
     let raw_input = unsafe { &*(raw_input_buffer.as_ptr() as *const RAWINPUT) };
     match raw_input.header.dwType {
         value if value == RIM_TYPEKEYBOARD => unsafe {
-            translate_raw_keyboard(&raw_input.data.keyboard).map(|action| vec![action])
+            if let Some(action) = translate_raw_keyboard(&raw_input.data.keyboard) {
+                state.record_action(action);
+            }
         },
-        value if value == RIM_TYPEMOUSE => {
-            Some(unsafe { translate_raw_mouse(&raw_input.data.mouse, display) })
-        }
-        _ => None,
+        value if value == RIM_TYPEMOUSE => unsafe {
+            record_raw_mouse(&raw_input.data.mouse, state);
+        },
+        _ => {}
     }
 }
 
@@ -262,24 +297,26 @@ fn translate_raw_keyboard(raw_keyboard: &RAWKEYBOARD) -> Option<InputAction> {
     }
 }
 
-fn translate_raw_mouse(raw_mouse: &RAWMOUSE, display: &DisplayMetadata) -> Vec<InputAction> {
-    let mut actions = Vec::new();
-
-    if raw_mouse.lLastX != 0 || raw_mouse.lLastY != 0 {
-        if let Some(pointer_position) = current_pointer_position(display) {
-            actions.push(InputAction::PointerMoved {
+fn record_raw_mouse(raw_mouse: &RAWMOUSE, state: &RawInputRecordingState) {
+    let pointer_move_action = if raw_mouse.lLastX != 0 || raw_mouse.lLastY != 0 {
+        current_pointer_position(state.display()).map(|pointer_position| {
+            InputAction::PointerMoved {
                 position: pointer_position,
-            });
-        }
-    }
+            }
+        })
+    } else {
+        None
+    };
 
     let raw_button_state = unsafe { raw_mouse.Anonymous.Anonymous };
-    actions.extend(decode_raw_mouse_button_actions(
-        raw_button_state.usButtonFlags,
-        raw_button_state.usButtonData,
-    ));
-
-    actions
+    state.record_actions(
+        pointer_move_action
+            .into_iter()
+            .chain(raw_mouse_button_actions(
+                raw_button_state.usButtonFlags,
+                raw_button_state.usButtonData,
+            )),
+    );
 }
 
 fn current_pointer_position(display: &DisplayMetadata) -> Option<regxorder_core::PointerPosition> {
@@ -297,82 +334,74 @@ fn current_pointer_position(display: &DisplayMetadata) -> Option<regxorder_core:
         .ok()
 }
 
-fn decode_raw_mouse_button_actions(button_flags: u16, button_data: u16) -> Vec<InputAction> {
+fn raw_mouse_button_actions(
+    button_flags: u16,
+    button_data: u16,
+) -> impl Iterator<Item = InputAction> {
     let button_flags = u32::from(button_flags);
     let wheel_delta = i32::from(button_data as i16);
-    let mut actions = Vec::new();
 
-    if button_flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0 {
-        actions.push(InputAction::MouseButtonPressed {
+    [
+        (button_flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0).then_some(
+            InputAction::MouseButtonPressed {
+                button: MouseButton::Left,
+            },
+        ),
+        (button_flags & RI_MOUSE_LEFT_BUTTON_UP != 0).then_some(InputAction::MouseButtonReleased {
             button: MouseButton::Left,
-        });
-    }
-    if button_flags & RI_MOUSE_LEFT_BUTTON_UP != 0 {
-        actions.push(InputAction::MouseButtonReleased {
-            button: MouseButton::Left,
-        });
-    }
-    if button_flags & RI_MOUSE_RIGHT_BUTTON_DOWN != 0 {
-        actions.push(InputAction::MouseButtonPressed {
-            button: MouseButton::Right,
-        });
-    }
-    if button_flags & RI_MOUSE_RIGHT_BUTTON_UP != 0 {
-        actions.push(InputAction::MouseButtonReleased {
-            button: MouseButton::Right,
-        });
-    }
-    if button_flags & RI_MOUSE_MIDDLE_BUTTON_DOWN != 0 {
-        actions.push(InputAction::MouseButtonPressed {
-            button: MouseButton::Middle,
-        });
-    }
-    if button_flags & RI_MOUSE_MIDDLE_BUTTON_UP != 0 {
-        actions.push(InputAction::MouseButtonReleased {
-            button: MouseButton::Middle,
-        });
-    }
-    if button_flags & RI_MOUSE_BUTTON_4_DOWN != 0 {
-        actions.push(InputAction::MouseButtonPressed {
+        }),
+        (button_flags & RI_MOUSE_RIGHT_BUTTON_DOWN != 0).then_some(
+            InputAction::MouseButtonPressed {
+                button: MouseButton::Right,
+            },
+        ),
+        (button_flags & RI_MOUSE_RIGHT_BUTTON_UP != 0).then_some(
+            InputAction::MouseButtonReleased {
+                button: MouseButton::Right,
+            },
+        ),
+        (button_flags & RI_MOUSE_MIDDLE_BUTTON_DOWN != 0).then_some(
+            InputAction::MouseButtonPressed {
+                button: MouseButton::Middle,
+            },
+        ),
+        (button_flags & RI_MOUSE_MIDDLE_BUTTON_UP != 0).then_some(
+            InputAction::MouseButtonReleased {
+                button: MouseButton::Middle,
+            },
+        ),
+        (button_flags & RI_MOUSE_BUTTON_4_DOWN != 0).then_some(InputAction::MouseButtonPressed {
             button: MouseButton::X1,
-        });
-    }
-    if button_flags & RI_MOUSE_BUTTON_4_UP != 0 {
-        actions.push(InputAction::MouseButtonReleased {
+        }),
+        (button_flags & RI_MOUSE_BUTTON_4_UP != 0).then_some(InputAction::MouseButtonReleased {
             button: MouseButton::X1,
-        });
-    }
-    if button_flags & RI_MOUSE_BUTTON_5_DOWN != 0 {
-        actions.push(InputAction::MouseButtonPressed {
+        }),
+        (button_flags & RI_MOUSE_BUTTON_5_DOWN != 0).then_some(InputAction::MouseButtonPressed {
             button: MouseButton::X2,
-        });
-    }
-    if button_flags & RI_MOUSE_BUTTON_5_UP != 0 {
-        actions.push(InputAction::MouseButtonReleased {
+        }),
+        (button_flags & RI_MOUSE_BUTTON_5_UP != 0).then_some(InputAction::MouseButtonReleased {
             button: MouseButton::X2,
-        });
-    }
-    if button_flags & RI_MOUSE_WHEEL != 0 {
-        actions.push(InputAction::MouseWheelScrolled {
+        }),
+        (button_flags & RI_MOUSE_WHEEL != 0).then_some(InputAction::MouseWheelScrolled {
             axis: regxorder_core::ScrollAxis::Vertical,
             delta: wheel_delta,
-        });
-    }
-    if button_flags & RI_MOUSE_HWHEEL != 0 {
-        actions.push(InputAction::MouseWheelScrolled {
+        }),
+        (button_flags & RI_MOUSE_HWHEEL != 0).then_some(InputAction::MouseWheelScrolled {
             axis: regxorder_core::ScrollAxis::Horizontal,
             delta: wheel_delta,
-        });
-    }
-
-    actions
+        }),
+    ]
+    .into_iter()
+    .flatten()
 }
 
-fn raw_input_state_slot() -> &'static Mutex<Option<Arc<RecorderState>>> {
+fn raw_input_state_slot() -> &'static Mutex<Option<Arc<RawInputRecordingState>>> {
     RAW_INPUT_STATE.get_or_init(|| Mutex::new(None))
 }
 
-fn set_raw_input_state(state: Option<Arc<RecorderState>>) -> Result<(), WindowsBackendError> {
+fn set_raw_input_state(
+    state: Option<Arc<RawInputRecordingState>>,
+) -> Result<(), WindowsBackendError> {
     let mut slot = raw_input_state_slot()
         .lock()
         .map_err(|_| WindowsBackendError::Internal("raw input state mutex was poisoned"))?;
@@ -380,7 +409,7 @@ fn set_raw_input_state(state: Option<Arc<RecorderState>>) -> Result<(), WindowsB
     Ok(())
 }
 
-fn active_raw_input_state() -> Option<Arc<RecorderState>> {
+fn active_raw_input_state() -> Option<Arc<RawInputRecordingState>> {
     raw_input_state_slot().lock().ok()?.as_ref().map(Arc::clone)
 }
 
@@ -399,7 +428,7 @@ mod tests {
         },
     };
 
-    use super::{decode_raw_mouse_button_actions, translate_raw_keyboard};
+    use super::{raw_mouse_button_actions, translate_raw_keyboard};
 
     #[test]
     fn raw_keyboard_translation_uses_break_and_extended_flags() {
@@ -434,10 +463,11 @@ mod tests {
 
     #[test]
     fn raw_mouse_button_decoder_handles_buttons_and_wheels() {
-        let actions = decode_raw_mouse_button_actions(
+        let actions: Vec<_> = raw_mouse_button_actions(
             (RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_WHEEL | RI_MOUSE_BUTTON_4_DOWN) as u16,
             120_i16 as u16,
-        );
+        )
+        .collect();
 
         assert!(matches!(
             actions[0],
@@ -462,7 +492,7 @@ mod tests {
 
     #[test]
     fn raw_mouse_button_decoder_ignores_empty_flag_sets() {
-        let actions = decode_raw_mouse_button_actions(0, 0);
+        let actions: Vec<_> = raw_mouse_button_actions(0, 0).collect();
 
         assert!(actions.is_empty());
     }

@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use crate::{Recording, RecordingError};
 
 /// Parses a canonical JSON recording and validates its semantic invariants.
@@ -11,6 +13,16 @@ pub fn from_json_str(input: &str) -> Result<Recording, RecordingError> {
 pub fn to_json_pretty(recording: &Recording) -> Result<String, RecordingError> {
     recording.validate()?;
     Ok(serde_json::to_string_pretty(recording)?)
+}
+
+/// Serializes a recording as canonical pretty-printed JSON into the provided writer.
+pub fn write_json_pretty<W>(recording: &Recording, writer: W) -> Result<(), RecordingError>
+where
+    W: Write,
+{
+    recording.validate()?;
+    serde_json::to_writer_pretty(writer, recording)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -72,6 +84,18 @@ mod tests {
         assert_eq!(decoded, recording);
         assert_eq!(decoded.events()[0].sequence, 0);
         assert_eq!(decoded.events()[1].sequence, 1);
+    }
+
+    #[test]
+    fn writer_based_pretty_json_matches_string_output() {
+        let recording = sample_recording();
+        let encoded = to_json_pretty(&recording).expect("recording should serialize");
+        let mut writer_output = Vec::new();
+
+        super::write_json_pretty(&recording, &mut writer_output)
+            .expect("recording should serialize into a writer");
+
+        assert_eq!(String::from_utf8(writer_output).unwrap(), encoded);
     }
 
     #[test]
