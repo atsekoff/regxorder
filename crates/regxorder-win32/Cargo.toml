@@ -1,0 +1,9 @@
+[package]
+name = "regxorder-win32"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Windows backend implementations for regxorder"
+
+[dependencies]
+regxorder-core = { path = "../regxorder-core" }

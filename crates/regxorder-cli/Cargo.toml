@@ -1,0 +1,9 @@
+[package]
+name = "regxorder-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Command-line interface for regxorder"
+
+[dependencies]
+regxorder-core = { path = "../regxorder-core" }
