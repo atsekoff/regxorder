@@ -1,5 +1,6 @@
 mod low_level_hooks;
 mod raw_input;
+mod thread_message_loop;
 
 use std::{
     fmt, mem,
@@ -17,16 +18,14 @@ use regxorder_core::{
     RecordingMetadata, SchemaVersion, ScreenSize,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, GetSystemMetrics, MSG, PostThreadMessageW, SM_CXVIRTUALSCREEN,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, TranslateMessage, WM_APP, WM_QUIT,
+    GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 
 use crate::WindowsBackendError;
+use thread_message_loop::post_stop_message;
 
 pub use low_level_hooks::record_with_low_level_hooks;
 pub use raw_input::record_with_raw_input;
-
-pub(super) const RECORD_STOP_MESSAGE: u32 = WM_APP + 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordingStrategy {
@@ -162,27 +161,6 @@ where
     Recording::new(metadata, events).map_err(WindowsBackendError::from)
 }
 
-pub(super) fn message_loop() -> Result<(), WindowsBackendError> {
-    let mut message: MSG = unsafe { mem::zeroed() };
-
-    loop {
-        let status = unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) };
-        if status == -1 {
-            return Err(WindowsBackendError::last_os_error("GetMessageW"));
-        }
-        if status == 0 || message.message == RECORD_STOP_MESSAGE || message.message == WM_QUIT {
-            break;
-        }
-
-        unsafe {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
-    }
-
-    Ok(())
-}
-
 fn capture_display_metadata() -> DisplayMetadata {
     DisplayMetadata {
         virtual_origin: AbsoluteScreenPoint {
@@ -194,15 +172,6 @@ fn capture_display_metadata() -> DisplayMetadata {
             height: unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) as u32 },
         },
         monitors: Vec::new(),
-    }
-}
-
-pub(super) fn post_stop_message(thread_id: u32) -> Result<(), WindowsBackendError> {
-    let posted = unsafe { PostThreadMessageW(thread_id, RECORD_STOP_MESSAGE, 0, 0) };
-    if posted == 0 {
-        Err(WindowsBackendError::last_os_error("PostThreadMessageW"))
-    } else {
-        Ok(())
     }
 }
 

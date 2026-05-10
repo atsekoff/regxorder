@@ -17,9 +17,6 @@ if (-not $looksLikeCommit -or -not $looksLikeTerminalTool) {
     return
 }
 
-$workspaceRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
-$cargoManifest = Join-Path $workspaceRoot 'Cargo.toml'
-
 function Write-HookDecision {
     param(
         [Parameter(Mandatory = $true)]
@@ -41,58 +38,23 @@ function Write-HookDecision {
     } | ConvertTo-Json -Compress
 }
 
-if (-not (Test-Path $cargoManifest)) {
-    Write-HookDecision -PermissionDecision 'allow'
-    return
-}
-
-Push-Location $workspaceRoot
 try {
-    $stagedPaths = @(git diff --cached --name-only --diff-filter=ACMR)
-    if ($LASTEXITCODE -ne 0) {
-        Write-HookDecision -PermissionDecision 'deny' -PermissionDecisionReason 'Unable to inspect staged files before commit.'
-        return
-    }
-
-    $unstagedPaths = @(git diff --name-only --diff-filter=ACMR)
-    if ($LASTEXITCODE -ne 0) {
-        Write-HookDecision -PermissionDecision 'deny' -PermissionDecisionReason 'Unable to inspect unstaged files before commit.'
-        return
-    }
-
-    $stagedPathLookup = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($stagedPath in $stagedPaths) {
-        [void]$stagedPathLookup.Add($stagedPath)
-    }
-
-    $pathsNeedingRestage = @(
-        $unstagedPaths | Where-Object {
-            $stagedPathLookup.Contains($_)
-        }
-    )
-    if ($pathsNeedingRestage.Count -gt 0) {
-        $pathList = ($pathsNeedingRestage | Sort-Object | Select-Object -First 5) -join ', '
-        Write-HookDecision -PermissionDecision 'deny' -PermissionDecisionReason "Some staged files also have unstaged changes. Save, format, and restage every changed file before committing. Examples: $pathList"
-        return
-    }
-
-    git diff --cached --check | Out-Null
-    $stagedDiffCheckStatus = $LASTEXITCODE
-    if ($stagedDiffCheckStatus -ne 0) {
-        Write-HookDecision -PermissionDecision 'deny' -PermissionDecisionReason 'Staged files still contain whitespace or newline problems. Apply the appropriate formatter, restage the files, and then commit.'
-        return
-    }
-
-    cargo fmt --all --check | Out-Null
-    $rustFormatStatus = $LASTEXITCODE
+    $checkOutput = & (Join-Path $PSScriptRoot 'check-commit-readiness.ps1') 2>&1 | Out-String
+    $checkStatus = $LASTEXITCODE
 }
-finally {
-    Pop-Location
+catch {
+    $checkOutput = $_.Exception.Message
+    $checkStatus = 1
 }
 
-if ($rustFormatStatus -eq 0) {
+if ($checkStatus -eq 0) {
     Write-HookDecision -PermissionDecision 'allow'
     return
 }
 
-Write-HookDecision -PermissionDecision 'deny' -PermissionDecisionReason 'Rust files are not formatted. Run cargo fmt --all, restage every affected file, and then commit.'
+$denialReason = $checkOutput.Trim()
+if ([string]::IsNullOrWhiteSpace($denialReason)) {
+    $denialReason = 'Commit readiness checks failed.'
+}
+
+Write-HookDecision -PermissionDecision 'deny' -PermissionDecisionReason $denialReason

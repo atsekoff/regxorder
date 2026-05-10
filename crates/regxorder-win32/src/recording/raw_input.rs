@@ -30,7 +30,7 @@ use windows_sys::Win32::{
 
 use crate::WindowsBackendError;
 
-use super::{RecorderState, message_loop, record_with_worker};
+use super::{RecorderState, record_with_worker, thread_message_loop::run_thread_message_loop};
 
 const RAW_INPUT_WINDOW_CLASS_NAME: &str = "regxorder-raw-input-window";
 const WINDOW_CLASS_ALREADY_EXISTS: i32 = 1410;
@@ -95,7 +95,7 @@ fn run_raw_input_thread(
             .send(Ok(()))
             .map_err(|_| WindowsBackendError::Internal("failed to signal recorder startup"))?;
 
-        message_loop()?;
+        run_thread_message_loop()?;
         shared_state.take_events()
     })();
 

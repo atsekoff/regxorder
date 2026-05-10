@@ -18,7 +18,7 @@ use windows_sys::Win32::{
 
 use crate::WindowsBackendError;
 
-use super::{RecorderState, message_loop, record_with_worker};
+use super::{RecorderState, record_with_worker, thread_message_loop::run_thread_message_loop};
 
 static LOW_LEVEL_HOOK_STATE: OnceLock<Mutex<Option<Arc<RecorderState>>>> = OnceLock::new();
 
@@ -73,7 +73,7 @@ fn run_low_level_hook_thread(
             .send(Ok(()))
             .map_err(|_| WindowsBackendError::Internal("failed to signal recorder startup"))?;
 
-        message_loop()?;
+        run_thread_message_loop()?;
         shared_state.take_events()
     })();
 
