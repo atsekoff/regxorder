@@ -9,12 +9,14 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueHint};
 use regxorder_core::{
-    AbsoluteScreenPoint, DisplayMetadata, EventOffset, InputAction, InputEvent, KeyDescriptor,
+    AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, InputAction, InputEvent, KeyDescriptor,
     Recording, RecordingError, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize,
     SpeedMultiplier, ValidationError,
 };
 use regxorder_win32::{WindowsBackendError, play_recording, record_with_low_level_hooks};
 use thiserror::Error;
+
+const SESSION_DIRECTORY_NAME: &str = "sessions";
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Command-line tools for regxorder recordings")]
@@ -27,7 +29,7 @@ pub struct Cli {
 enum Command {
     /// Generate a small sample recording that can be inspected or replayed later.
     Sample {
-        /// Path to write the sample recording JSON file.
+        /// Path to write the sample recording JSON file. A bare filename is written under sessions/.
         #[arg(long, value_hint = ValueHint::FilePath)]
         output: PathBuf,
 
@@ -38,21 +40,21 @@ enum Command {
 
     /// Validate that a recording file parses and satisfies semantic invariants.
     Validate {
-        /// Path to the recording JSON file.
+        /// Path to the recording JSON file. A bare filename is resolved from sessions/ if present.
         #[arg(long, value_hint = ValueHint::FilePath)]
         input: PathBuf,
     },
 
     /// Print a compact summary of a recording file.
     Inspect {
-        /// Path to the recording JSON file.
+        /// Path to the recording JSON file. A bare filename is resolved from sessions/ if present.
         #[arg(long, value_hint = ValueHint::FilePath)]
         input: PathBuf,
     },
 
     /// Replay a recording file with the Windows playback backend.
     Play {
-        /// Path to the recording JSON file.
+        /// Path to the recording JSON file. A bare filename is resolved from sessions/ if present.
         #[arg(long, value_hint = ValueHint::FilePath)]
         input: PathBuf,
 
@@ -63,7 +65,7 @@ enum Command {
 
     /// Record keyboard and mouse input using the current hook-based backend.
     Record {
-        /// Path to write the captured recording JSON file.
+        /// Path to write the captured recording JSON file. A bare filename is written under sessions/.
         #[arg(long, value_hint = ValueHint::FilePath)]
         output: PathBuf,
 
@@ -112,6 +114,7 @@ fn record_recording_file(
     title: Option<String>,
     duration_seconds: Option<f64>,
 ) -> Result<(), CliError> {
+    let resolved_output_path = resolve_session_output_path(output);
     let stop_requested = Arc::new(AtomicBool::new(false));
     let stop_handler = Arc::clone(&stop_requested);
 
@@ -140,20 +143,22 @@ fn record_recording_file(
 
     let recording = record_with_low_level_hooks(stop_requested.as_ref(), title)?;
     let encoded = recording.to_json_pretty()?;
-    fs::write(output, encoded)?;
+    ensure_parent_directory_exists(&resolved_output_path)?;
+    fs::write(&resolved_output_path, encoded)?;
 
     println!(
         "recorded {} events over {} us to {}",
         recording.event_count(),
         recording.duration().as_micros(),
-        output.display()
+        resolved_output_path.display()
     );
 
     Ok(())
 }
 
 fn play_recording_file(path: &Path, speed: f64) -> Result<(), CliError> {
-    let recording = load_recording(path)?;
+    let resolved_input_path = resolve_session_input_path(path);
+    let recording = load_recording(&resolved_input_path)?;
     let speed = SpeedMultiplier::new(speed)?;
     let stop_requested = Arc::new(AtomicBool::new(false));
     let stop_handler = Arc::clone(&stop_requested);
@@ -165,7 +170,7 @@ fn play_recording_file(path: &Path, speed: f64) -> Result<(), CliError> {
     println!(
         "playing {} events from {} at {}x speed; press Ctrl+C to stop",
         recording.event_count(),
-        path.display(),
+        resolved_input_path.display(),
         speed.get()
     );
 
@@ -189,14 +194,16 @@ fn play_recording_file(path: &Path, speed: f64) -> Result<(), CliError> {
 }
 
 fn write_sample_recording(path: &Path, title: Option<&str>) -> Result<(), CliError> {
+    let resolved_output_path = resolve_session_output_path(path);
     let recording = sample_recording(title);
     let encoded = recording.to_json_pretty()?;
 
-    fs::write(path, encoded)?;
+    ensure_parent_directory_exists(&resolved_output_path)?;
+    fs::write(&resolved_output_path, encoded)?;
 
     println!(
         "wrote sample recording to {} ({} events, {} us)",
-        path.display(),
+        resolved_output_path.display(),
         recording.event_count(),
         recording.duration().as_micros()
     );
@@ -205,7 +212,7 @@ fn write_sample_recording(path: &Path, title: Option<&str>) -> Result<(), CliErr
 }
 
 fn validate_recording(path: &Path) -> Result<(), CliError> {
-    let recording = load_recording(path)?;
+    let recording = load_recording(&resolve_session_input_path(path))?;
 
     println!(
         "recording is valid: {} events over {} us",
@@ -217,7 +224,7 @@ fn validate_recording(path: &Path) -> Result<(), CliError> {
 }
 
 fn inspect_recording(path: &Path) -> Result<(), CliError> {
-    let recording = load_recording(path)?;
+    let recording = load_recording(&resolve_session_input_path(path))?;
     let metadata = recording.metadata();
     let title = metadata.title.as_deref().unwrap_or("<untitled>");
     let duration_micros = recording.duration().as_micros();
@@ -270,7 +277,7 @@ fn sample_recording(title: Option<&str>) -> Recording {
         vec![
             InputEvent {
                 sequence: 0,
-                offset: EventOffset::from_micros(0),
+                elapsed_time: ElapsedTime::from_micros(0),
                 action: InputAction::KeyPressed {
                     key: KeyDescriptor {
                         scan_code: ScanCode::new(30),
@@ -281,7 +288,7 @@ fn sample_recording(title: Option<&str>) -> Recording {
             },
             InputEvent {
                 sequence: 1,
-                offset: EventOffset::from_micros(40_000),
+                elapsed_time: ElapsedTime::from_micros(40_000),
                 action: InputAction::KeyReleased {
                     key: KeyDescriptor {
                         scan_code: ScanCode::new(30),
@@ -295,9 +302,44 @@ fn sample_recording(title: Option<&str>) -> Recording {
     .expect("built-in sample recording should always be valid")
 }
 
+fn resolve_session_output_path(requested_path: &Path) -> PathBuf {
+    if requested_path.is_absolute() || requested_path.components().count() > 1 {
+        requested_path.to_path_buf()
+    } else {
+        default_session_directory().join(requested_path)
+    }
+}
+
+fn resolve_session_input_path(requested_path: &Path) -> PathBuf {
+    if requested_path.exists()
+        || requested_path.is_absolute()
+        || requested_path.components().count() > 1
+    {
+        requested_path.to_path_buf()
+    } else {
+        default_session_directory().join(requested_path)
+    }
+}
+
+fn default_session_directory() -> PathBuf {
+    PathBuf::from(SESSION_DIRECTORY_NAME)
+}
+
+fn ensure_parent_directory_exists(path: &Path) -> Result<(), CliError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::sample_recording;
+    use std::path::{Path, PathBuf};
+
+    use super::{resolve_session_input_path, resolve_session_output_path, sample_recording};
 
     #[test]
     fn built_in_sample_recording_is_valid_and_ordered() {
@@ -308,5 +350,29 @@ mod tests {
         assert_eq!(recording.events()[1].sequence, 1);
         assert_eq!(recording.duration().as_micros(), 40_000);
         assert_eq!(recording.metadata().title.as_deref(), Some("CLI sample"));
+    }
+
+    #[test]
+    fn bare_output_filenames_are_written_under_the_sessions_directory() {
+        let resolved = resolve_session_output_path(Path::new("demo.json"));
+
+        assert_eq!(resolved, PathBuf::from("sessions").join("demo.json"));
+    }
+
+    #[test]
+    fn nested_relative_output_paths_are_respected() {
+        let resolved = resolve_session_output_path(Path::new("fixtures/demo.json"));
+
+        assert_eq!(resolved, PathBuf::from("fixtures").join("demo.json"));
+    }
+
+    #[test]
+    fn missing_bare_input_filenames_fall_back_to_the_sessions_directory() {
+        let resolved = resolve_session_input_path(Path::new("does-not-exist.json"));
+
+        assert_eq!(
+            resolved,
+            PathBuf::from("sessions").join("does-not-exist.json")
+        );
     }
 }

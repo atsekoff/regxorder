@@ -10,23 +10,21 @@ use std::{
 };
 
 use regxorder_core::{
-    AbsoluteScreenPoint, DisplayMetadata, EventOffset, InputAction, InputEvent, KeyDescriptor,
+    AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, InputAction, InputEvent, KeyDescriptor,
     MouseButton, Recording, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize,
 };
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, WPARAM},
     System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
-    UI::{
-        WindowsAndMessaging::{
-            CallNextHookEx, DispatchMessageW, GetMessageW, GetSystemMetrics, HHOOK,
-            HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED, LLMHF_INJECTED,
-            MSLLHOOKSTRUCT, MSG, PostThreadMessageW, SetWindowsHookExW, TranslateMessage,
-            UnhookWindowsHookEx, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_KEYDOWN, WM_KEYUP,
-            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
-            WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT, WM_RBUTTONDOWN, WM_RBUTTONUP,
-            WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP, XBUTTON1, XBUTTON2,
-            SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-        },
+    UI::WindowsAndMessaging::{
+        CallNextHookEx, DispatchMessageW, GetMessageW, GetSystemMetrics, HC_ACTION, HHOOK,
+        KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT,
+        PostThreadMessageW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx,
+        WH_KEYBOARD_LL, WH_MOUSE_LL, WM_APP, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+        WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_QUIT,
+        WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
+        XBUTTON1, XBUTTON2,
     },
 };
 
@@ -55,10 +53,10 @@ impl HookSharedState {
 
     fn record_action(&self, action: InputAction) {
         let elapsed = self.started_at.elapsed().as_micros();
-        let offset_micros = u64::try_from(elapsed).unwrap_or(u64::MAX);
+        let elapsed_time_micros = u64::try_from(elapsed).unwrap_or(u64::MAX);
         let event = InputEvent {
             sequence: self.next_sequence.fetch_add(1, Ordering::SeqCst),
-            offset: EventOffset::from_micros(offset_micros),
+            elapsed_time: ElapsedTime::from_micros(elapsed_time_micros),
             action,
         };
 
@@ -92,9 +90,8 @@ pub fn record_with_low_level_hooks(
     let (startup_tx, startup_rx) = mpsc::sync_channel(1);
 
     let thread_display = display.clone();
-    let recorder_thread = thread::spawn(move || {
-        run_hook_thread(thread_display, thread_id_tx, startup_tx)
-    });
+    let recorder_thread =
+        thread::spawn(move || run_hook_thread(thread_display, thread_id_tx, startup_tx));
 
     let thread_id = thread_id_rx
         .recv()
@@ -284,10 +281,7 @@ unsafe extern "system" fn mouse_hook_proc(
     unsafe { CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param) }
 }
 
-fn translate_keyboard_message(
-    message: u32,
-    info: &KBDLLHOOKSTRUCT,
-) -> Option<InputAction> {
+fn translate_keyboard_message(message: u32, info: &KBDLLHOOKSTRUCT) -> Option<InputAction> {
     if info.flags & LLKHF_INJECTED != 0 {
         return None;
     }
@@ -340,12 +334,10 @@ fn translate_mouse_message(
         WM_MBUTTONUP => Some(InputAction::MouseButtonReleased {
             button: MouseButton::Middle,
         }),
-        WM_XBUTTONDOWN => x_button_from_mouse_data(info.mouseData).map(|button| {
-            InputAction::MouseButtonPressed { button }
-        }),
-        WM_XBUTTONUP => x_button_from_mouse_data(info.mouseData).map(|button| {
-            InputAction::MouseButtonReleased { button }
-        }),
+        WM_XBUTTONDOWN => x_button_from_mouse_data(info.mouseData)
+            .map(|button| InputAction::MouseButtonPressed { button }),
+        WM_XBUTTONUP => x_button_from_mouse_data(info.mouseData)
+            .map(|button| InputAction::MouseButtonReleased { button }),
         WM_MOUSEWHEEL => Some(InputAction::MouseWheelScrolled {
             axis: regxorder_core::ScrollAxis::Vertical,
             delta: wheel_delta(info.mouseData),
@@ -377,11 +369,9 @@ mod tests {
     use regxorder_core::{AbsoluteScreenPoint, DisplayMetadata, MouseButton, ScreenSize};
     use windows_sys::Win32::{
         Foundation::POINT,
-        UI::{
-            WindowsAndMessaging::{
-                KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED, MSLLHOOKSTRUCT, WM_KEYDOWN,
-                WM_KEYUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_XBUTTONDOWN, XBUTTON1,
-            },
+        UI::WindowsAndMessaging::{
+            KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED, MSLLHOOKSTRUCT, WM_KEYDOWN, WM_KEYUP,
+            WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_XBUTTONDOWN, XBUTTON1,
         },
     };
 
@@ -415,7 +405,8 @@ mod tests {
 
         let down_action =
             translate_keyboard_message(WM_KEYDOWN, &down).expect("key down should translate");
-        let up_action = translate_keyboard_message(WM_KEYUP, &down).expect("key up should translate");
+        let up_action =
+            translate_keyboard_message(WM_KEYUP, &down).expect("key up should translate");
 
         match down_action {
             InputAction::KeyPressed { key } => {
@@ -426,14 +417,16 @@ mod tests {
         }
 
         assert!(matches!(up_action, InputAction::KeyReleased { .. }));
-        assert!(translate_keyboard_message(
-            WM_KEYDOWN,
-            &KBDLLHOOKSTRUCT {
-                flags: LLKHF_INJECTED,
-                ..down
-            },
-        )
-        .is_none());
+        assert!(
+            translate_keyboard_message(
+                WM_KEYDOWN,
+                &KBDLLHOOKSTRUCT {
+                    flags: LLKHF_INJECTED,
+                    ..down
+                },
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -470,7 +463,10 @@ mod tests {
 
         assert!(matches!(
             wheel_action,
-            InputAction::MouseWheelScrolled { axis: regxorder_core::ScrollAxis::Vertical, delta: 120 }
+            InputAction::MouseWheelScrolled {
+                axis: regxorder_core::ScrollAxis::Vertical,
+                delta: 120
+            }
         ));
         assert!(matches!(
             xbutton_action,

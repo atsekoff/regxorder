@@ -29,9 +29,9 @@ pub enum ValidationError {
     NonConsecutiveSequence { expected: u64, found: u64 },
 
     #[error(
-        "event offsets must be monotonic; previous {previous_micros}us, found {found_micros}us"
+        "event elapsed times must be monotonic; previous {previous_micros}us, found {found_micros}us"
     )]
-    NonMonotonicOffset {
+    NonMonotonicElapsedTime {
         previous_micros: u64,
         found_micros: u64,
     },

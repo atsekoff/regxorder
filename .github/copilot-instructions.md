@@ -17,9 +17,15 @@
 ## Code And API
 
 - Prefer explicit domain types and typed errors over loose primitives and stringly typed state.
+- Prefer verbose, unambiguous names for types, fields, functions, variables, and commands so intent is obvious at a glance.
 - Preserve deterministic semantics: strict event ordering, relative timestamps, speed scaling, explicit cleanup on abort, and clear capability boundaries.
 - Keep business rules in shared services or the core SDK. The CLI and UI should stay thin.
 - Favor small, composable modules that are easy to test with fake clocks and fake backends.
+
+## Workflow
+
+- Before any commit, run the appropriate formatter for changed code and stage the formatted result.
+- For Rust code, the baseline formatting command is `cargo fmt --all`.
 
 ## Testing
 

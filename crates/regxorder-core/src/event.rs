@@ -44,23 +44,23 @@ impl ScanCode {
     }
 }
 
-/// A relative time offset stored in microseconds from recording start.
+/// An elapsed time stored in microseconds from recording start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct EventOffset(u64);
+pub struct ElapsedTime(u64);
 
-impl EventOffset {
-    /// Creates a relative time offset in microseconds.
+impl ElapsedTime {
+    /// Creates an elapsed time in microseconds.
     pub const fn from_micros(micros: u64) -> Self {
         Self(micros)
     }
 
-    /// Returns the raw offset value in microseconds.
+    /// Returns the raw elapsed time value in microseconds.
     pub const fn as_micros(self) -> u64 {
         self.0
     }
 
-    /// Converts the offset to a standard library duration.
+    /// Converts the elapsed time to a standard library duration.
     pub fn as_duration(self) -> Duration {
         Duration::from_micros(self.0)
     }
@@ -308,7 +308,8 @@ pub enum InputAction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InputEvent {
     pub sequence: u64,
-    pub offset: EventOffset,
+    #[serde(alias = "offset")]
+    pub elapsed_time: ElapsedTime,
     pub action: InputAction,
 }
 

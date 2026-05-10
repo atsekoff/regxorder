@@ -16,9 +16,9 @@ pub fn to_json_pretty(recording: &Recording) -> Result<String, RecordingError> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        from_json_str, to_json_pretty, AbsoluteScreenPoint, DisplayMetadata, EventOffset,
-        InputAction, InputEvent, KeyDescriptor, Recording, RecordingMetadata, ScanCode,
-        SchemaVersion, ScreenSize,
+        AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, InputAction, InputEvent, KeyDescriptor,
+        Recording, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize, from_json_str,
+        to_json_pretty,
     };
 
     fn sample_recording() -> Recording {
@@ -38,7 +38,7 @@ mod tests {
             vec![
                 InputEvent {
                     sequence: 0,
-                    offset: EventOffset::from_micros(0),
+                    elapsed_time: ElapsedTime::from_micros(0),
                     action: InputAction::KeyPressed {
                         key: KeyDescriptor {
                             scan_code: ScanCode::new(30),
@@ -49,7 +49,7 @@ mod tests {
                 },
                 InputEvent {
                     sequence: 1,
-                    offset: EventOffset::from_micros(35_000),
+                    elapsed_time: ElapsedTime::from_micros(35_000),
                     action: InputAction::KeyReleased {
                         key: KeyDescriptor {
                             scan_code: ScanCode::new(30),
@@ -89,7 +89,7 @@ mod tests {
           "events": [
             {
               "sequence": 0,
-              "offset": 0,
+              "elapsed_time": 0,
               "action": {
                 "type": "pointer_moved",
                 "position": {

@@ -54,11 +54,11 @@ impl Recording {
     }
 
     /// Returns the total relative duration of the recording.
-    pub fn duration(&self) -> crate::EventOffset {
+    pub fn duration(&self) -> crate::ElapsedTime {
         self.events
             .last()
-            .map(|event| event.offset)
-            .unwrap_or_else(|| crate::EventOffset::from_micros(0))
+            .map(|event| event.elapsed_time)
+            .unwrap_or_else(|| crate::ElapsedTime::from_micros(0))
     }
 
     /// Validates the recording's invariants.
@@ -81,7 +81,7 @@ impl Recording {
 
         self.metadata.display.validate()?;
 
-        let mut previous_offset = None;
+        let mut previous_elapsed_time = None;
 
         for (index, event) in self.events.iter().enumerate() {
             let expected_sequence = index as u64;
@@ -93,16 +93,16 @@ impl Recording {
                 });
             }
 
-            if let Some(previous_offset_micros) = previous_offset {
-                if event.offset.as_micros() < previous_offset_micros {
-                    return Err(ValidationError::NonMonotonicOffset {
-                        previous_micros: previous_offset_micros,
-                        found_micros: event.offset.as_micros(),
+            if let Some(previous_elapsed_time_micros) = previous_elapsed_time {
+                if event.elapsed_time.as_micros() < previous_elapsed_time_micros {
+                    return Err(ValidationError::NonMonotonicElapsedTime {
+                        previous_micros: previous_elapsed_time_micros,
+                        found_micros: event.elapsed_time.as_micros(),
                     });
                 }
             }
 
-            previous_offset = Some(event.offset.as_micros());
+            previous_elapsed_time = Some(event.elapsed_time.as_micros());
         }
 
         Ok(())
@@ -123,7 +123,7 @@ impl Recording {
 mod tests {
     use super::*;
     use crate::{
-        AbsoluteScreenPoint, EventOffset, InputAction, KeyDescriptor, MouseButton, ScanCode,
+        AbsoluteScreenPoint, ElapsedTime, InputAction, KeyDescriptor, MouseButton, ScanCode,
         ScreenSize,
     };
 
@@ -146,7 +146,7 @@ mod tests {
         vec![
             InputEvent {
                 sequence: 0,
-                offset: EventOffset::from_micros(10_000),
+                elapsed_time: ElapsedTime::from_micros(10_000),
                 action: InputAction::KeyPressed {
                     key: KeyDescriptor {
                         scan_code: ScanCode::new(30),
@@ -157,7 +157,7 @@ mod tests {
             },
             InputEvent {
                 sequence: 1,
-                offset: EventOffset::from_micros(12_000),
+                elapsed_time: ElapsedTime::from_micros(12_000),
                 action: InputAction::MouseButtonPressed {
                     button: MouseButton::Left,
                 },
@@ -183,16 +183,16 @@ mod tests {
     }
 
     #[test]
-    fn recording_validation_rejects_non_monotonic_offsets() {
+    fn recording_validation_rejects_non_monotonic_elapsed_times() {
         let mut events = sample_events();
-        events[1].offset = EventOffset::from_micros(9_000);
+        events[1].elapsed_time = ElapsedTime::from_micros(9_000);
 
         let error = Recording::new(sample_metadata(), events)
             .expect_err("recording should reject reversed timing");
 
         assert_eq!(
             error,
-            ValidationError::NonMonotonicOffset {
+            ValidationError::NonMonotonicElapsedTime {
                 previous_micros: 10_000,
                 found_micros: 9_000,
             }
@@ -218,7 +218,7 @@ mod tests {
     }
 
     #[test]
-    fn recording_duration_matches_the_last_event_offset() {
+    fn recording_duration_matches_the_last_event_elapsed_time() {
         let recording =
             Recording::new(sample_metadata(), sample_events()).expect("sample recording is valid");
 

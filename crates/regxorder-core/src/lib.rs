@@ -7,7 +7,7 @@ mod recording;
 
 pub use error::{RecordingError, ValidationError};
 pub use event::{
-    AbsoluteScreenPoint, DisplayMetadata, Dpi, EventOffset, InputAction, InputEvent, KeyDescriptor,
+    AbsoluteScreenPoint, DisplayMetadata, Dpi, ElapsedTime, InputAction, InputEvent, KeyDescriptor,
     MonitorDescriptor, MouseButton, NormalizedCoordinate, NormalizedScreenPoint, PointerPosition,
     ScanCode, SchemaVersion, ScreenSize, ScrollAxis, SpeedMultiplier,
 };

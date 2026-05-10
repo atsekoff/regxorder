@@ -89,7 +89,10 @@ pub fn play_recording(
     let display = &recording.metadata().display;
 
     for event in recording.events() {
-        wait_until(started, scheduled_offset(event.offset.as_micros(), speed));
+        wait_until(
+            started,
+            scheduled_elapsed_time(event.elapsed_time.as_micros(), speed),
+        );
 
         if stop_requested.load(Ordering::SeqCst) {
             cleanup_pressed_inputs(&pressed_state)?;
@@ -133,8 +136,8 @@ fn cleanup_pressed_inputs(pressed_state: &PressedState) -> Result<(), WindowsBac
     send_inputs(&cleanup_inputs)
 }
 
-fn scheduled_offset(offset_micros: u64, speed: SpeedMultiplier) -> Duration {
-    let adjusted = (offset_micros as f64 / speed.get()).round();
+fn scheduled_elapsed_time(elapsed_time_micros: u64, speed: SpeedMultiplier) -> Duration {
+    let adjusted = (elapsed_time_micros as f64 / speed.get()).round();
     Duration::from_micros(adjusted.max(0.0) as u64)
 }
 
@@ -309,7 +312,7 @@ mod tests {
     };
 
     use super::{
-        PlaybackReport, PressedState, key_input, scheduled_offset,
+        PlaybackReport, PressedState, key_input, scheduled_elapsed_time,
         to_absolute_mouse_coordinates,
     };
 
@@ -325,12 +328,12 @@ mod tests {
     }
 
     #[test]
-    fn scheduled_offset_scales_with_speed_multiplier() {
-        let fast = scheduled_offset(
+    fn scheduled_elapsed_time_scales_with_speed_multiplier() {
+        let fast = scheduled_elapsed_time(
             50_000,
             regxorder_core::SpeedMultiplier::new(2.0).expect("speed is valid"),
         );
-        let slow = scheduled_offset(
+        let slow = scheduled_elapsed_time(
             50_000,
             regxorder_core::SpeedMultiplier::new(0.5).expect("speed is valid"),
         );
