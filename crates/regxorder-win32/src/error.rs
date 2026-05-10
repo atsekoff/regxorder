@@ -3,8 +3,17 @@ use thiserror::Error;
 /// Errors surfaced by the Windows-specific recording and playback backends.
 #[derive(Debug, Error)]
 pub enum WindowsBackendError {
+    #[error(transparent)]
+    Validation(#[from] regxorder_core::ValidationError),
+
     #[error("playback was interrupted")]
     Interrupted,
+
+    #[error("an internal backend invariant was violated: {0}")]
+    Internal(&'static str),
+
+    #[error("the recording thread terminated unexpectedly")]
+    ThreadPanic,
 
     #[error(
         "SendInput submitted {submitted} of {requested} events; playback may be blocked by UIPI or another input filter"

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ValidationError, CURRENT_SCHEMA_VERSION};
+use crate::{CURRENT_SCHEMA_VERSION, ValidationError};
 
 /// A version marker for the canonical regxorder recording schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -220,6 +220,47 @@ impl DisplayMetadata {
 
         Ok(())
     }
+
+    /// Converts an absolute screen point into the canonical pointer position format.
+    pub fn pointer_position_for_absolute(
+        &self,
+        absolute: AbsoluteScreenPoint,
+    ) -> Result<PointerPosition, ValidationError> {
+        self.validate()?;
+
+        fn normalize_axis(
+            value: i32,
+            origin: i32,
+            span: u32,
+            axis: &'static str,
+        ) -> Result<NormalizedCoordinate, ValidationError> {
+            if span <= 1 {
+                return NormalizedCoordinate::new(0.0, axis);
+            }
+
+            let relative = (i64::from(value) - i64::from(origin)) as f64;
+            let denominator = f64::from(span - 1);
+            NormalizedCoordinate::new(relative / denominator, axis)
+        }
+
+        Ok(PointerPosition {
+            absolute,
+            normalized: NormalizedScreenPoint {
+                x: normalize_axis(
+                    absolute.x,
+                    self.virtual_origin.x,
+                    self.virtual_size.width,
+                    "x",
+                )?,
+                y: normalize_axis(
+                    absolute.y,
+                    self.virtual_origin.y,
+                    self.virtual_size.height,
+                    "y",
+                )?,
+            },
+        })
+    }
 }
 
 /// A key description that remains stable enough for deterministic playback.
@@ -298,5 +339,25 @@ mod tests {
                 "unexpected validation result for {invalid}"
             );
         }
+    }
+
+    #[test]
+    fn display_metadata_converts_absolute_points_to_pointer_positions() {
+        let display = DisplayMetadata {
+            virtual_origin: AbsoluteScreenPoint { x: -1920, y: 0 },
+            virtual_size: ScreenSize {
+                width: 3840,
+                height: 1080,
+            },
+            monitors: Vec::new(),
+        };
+
+        let pointer = display
+            .pointer_position_for_absolute(AbsoluteScreenPoint { x: 0, y: 540 })
+            .expect("point should normalize inside the display bounds");
+
+        assert_eq!(pointer.absolute.x, 0);
+        assert!(pointer.normalized.x.get() > 0.49 && pointer.normalized.x.get() < 0.51);
+        assert!(pointer.normalized.y.get() > 0.49 && pointer.normalized.y.get() < 0.51);
     }
 }

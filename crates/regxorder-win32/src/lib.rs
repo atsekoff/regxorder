@@ -2,6 +2,8 @@
 
 mod error;
 mod playback;
+mod recording;
 
 pub use error::WindowsBackendError;
 pub use playback::{PlaybackReport, play_recording};
+pub use recording::record_with_low_level_hooks;

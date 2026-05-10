@@ -13,7 +13,7 @@ use regxorder_core::{
     Recording, RecordingError, RecordingMetadata, ScanCode, SchemaVersion, ScreenSize,
     SpeedMultiplier, ValidationError,
 };
-use regxorder_win32::{WindowsBackendError, play_recording};
+use regxorder_win32::{WindowsBackendError, play_recording, record_with_low_level_hooks};
 use thiserror::Error;
 
 #[derive(Debug, Parser)]
@@ -60,6 +60,21 @@ enum Command {
         #[arg(long, default_value_t = 1.0)]
         speed: f64,
     },
+
+    /// Record keyboard and mouse input using the current hook-based backend.
+    Record {
+        /// Path to write the captured recording JSON file.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        output: PathBuf,
+
+        /// Optional title embedded in the captured recording.
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Optional duration limit in seconds. If omitted, recording stops on Ctrl+C.
+        #[arg(long)]
+        duration_seconds: Option<f64>,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -74,6 +89,8 @@ pub enum CliError {
     WindowsBackend(#[from] WindowsBackendError),
     #[error("failed to install Ctrl+C handler: {0}")]
     CtrlC(#[from] ctrlc::Error),
+    #[error("duration_seconds must be finite and greater than zero, found {0}")]
+    InvalidDuration(f64),
 }
 
 pub fn run(cli: Cli) -> Result<(), CliError> {
@@ -82,7 +99,57 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Command::Validate { input } => validate_recording(&input),
         Command::Inspect { input } => inspect_recording(&input),
         Command::Play { input, speed } => play_recording_file(&input, speed),
+        Command::Record {
+            output,
+            title,
+            duration_seconds,
+        } => record_recording_file(&output, title, duration_seconds),
     }
+}
+
+fn record_recording_file(
+    output: &Path,
+    title: Option<String>,
+    duration_seconds: Option<f64>,
+) -> Result<(), CliError> {
+    let stop_requested = Arc::new(AtomicBool::new(false));
+    let stop_handler = Arc::clone(&stop_requested);
+
+    ctrlc::set_handler(move || {
+        stop_handler.store(true, Ordering::SeqCst);
+    })?;
+
+    if let Some(seconds) = duration_seconds {
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return Err(CliError::InvalidDuration(seconds));
+        }
+
+        let timed_stop = Arc::clone(&stop_requested);
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs_f64(seconds));
+            timed_stop.store(true, Ordering::SeqCst);
+        });
+
+        println!(
+            "recording with low-level hooks for up to {:.3} seconds; press Ctrl+C to stop early",
+            seconds
+        );
+    } else {
+        println!("recording with low-level hooks; press Ctrl+C to stop");
+    }
+
+    let recording = record_with_low_level_hooks(stop_requested.as_ref(), title)?;
+    let encoded = recording.to_json_pretty()?;
+    fs::write(output, encoded)?;
+
+    println!(
+        "recorded {} events over {} us to {}",
+        recording.event_count(),
+        recording.duration().as_micros(),
+        output.display()
+    );
+
+    Ok(())
 }
 
 fn play_recording_file(path: &Path, speed: f64) -> Result<(), CliError> {
