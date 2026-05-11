@@ -1,8 +1,21 @@
+use std::mem::size_of;
+
 use regxorder_core::{DiagnosticCheck, EnvironmentDoctorReport, HotkeyBinding};
+use windows_sys::Win32::{
+    Foundation::CloseHandle,
+    Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation},
+    System::Threading::{GetCurrentProcess, OpenProcessToken},
+};
 
 use crate::{HotkeyRegistration, WindowsBackendError, hotkeys::probe_hotkey_registration};
 
 const DOCTOR_HOTKEY_PROBE_IDENTIFIER: i32 = 91;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessElevationStatus {
+    Elevated,
+    NotElevated,
+}
 
 /// Builds a structured environment doctor report for the Windows backend surface.
 pub fn diagnose_windows_environment(hotkey_probe: HotkeyBinding) -> EnvironmentDoctorReport {
@@ -10,15 +23,17 @@ pub fn diagnose_windows_environment(hotkey_probe: HotkeyBinding) -> EnvironmentD
         DOCTOR_HOTKEY_PROBE_IDENTIFIER,
         &hotkey_probe,
     ));
+    let process_elevation_result = query_process_elevation_status();
 
-    build_environment_report(hotkey_probe, hotkey_probe_result)
+    build_environment_report(hotkey_probe, hotkey_probe_result, process_elevation_result)
 }
 
 fn build_environment_report(
     hotkey_probe: HotkeyBinding,
     hotkey_probe_result: Result<(), WindowsBackendError>,
+    process_elevation_result: Result<ProcessElevationStatus, WindowsBackendError>,
 ) -> EnvironmentDoctorReport {
-    let mut checks = Vec::with_capacity(4);
+    let mut checks = Vec::with_capacity(5);
 
     checks.push(DiagnosticCheck::pass(
         "recording_backends",
@@ -48,6 +63,20 @@ fn build_environment_report(
             ),
         ),
     });
+    checks.push(match process_elevation_result {
+        Ok(ProcessElevationStatus::Elevated) => DiagnosticCheck::pass(
+            "process_elevation",
+            "the current regxorder process is running elevated",
+        ),
+        Ok(ProcessElevationStatus::NotElevated) => DiagnosticCheck::warn(
+            "process_elevation",
+            "the current regxorder process is not elevated; playback into elevated targets may be blocked by UIPI",
+        ),
+        Err(error) => DiagnosticCheck::fail(
+            "process_elevation",
+            format!("failed to query current process elevation: {error}"),
+        ),
+    });
 
     EnvironmentDoctorReport::new(
         std::env::consts::OS.to_string(),
@@ -60,11 +89,46 @@ fn build_environment_report(
     )
 }
 
+fn query_process_elevation_status() -> Result<ProcessElevationStatus, WindowsBackendError> {
+    let mut token_handle = std::ptr::null_mut();
+    let opened = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle) };
+    if opened == 0 {
+        return Err(WindowsBackendError::last_os_error("OpenProcessToken"));
+    }
+
+    let mut token_elevation: TOKEN_ELEVATION = unsafe { std::mem::zeroed() };
+    let mut returned_length = 0_u32;
+    let queried = unsafe {
+        GetTokenInformation(
+            token_handle,
+            TokenElevation,
+            (&mut token_elevation as *mut TOKEN_ELEVATION).cast(),
+            size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned_length,
+        )
+    };
+    let query_result = if queried == 0 {
+        Err(WindowsBackendError::last_os_error("GetTokenInformation"))
+    } else {
+        Ok(if token_elevation.TokenIsElevated == 0 {
+            ProcessElevationStatus::NotElevated
+        } else {
+            ProcessElevationStatus::Elevated
+        })
+    };
+
+    unsafe {
+        CloseHandle(token_handle);
+    }
+
+    query_result
+}
+
 #[cfg(test)]
 mod tests {
     use regxorder_core::HotkeyBinding;
 
-    use super::build_environment_report;
+    use super::{ProcessElevationStatus, build_environment_report};
     use crate::WindowsBackendError;
 
     #[test]
@@ -76,9 +140,26 @@ mod tests {
         let report = build_environment_report(
             hotkey_probe,
             Err(WindowsBackendError::Internal("probe failed")),
+            Ok(ProcessElevationStatus::Elevated),
         );
 
         assert_eq!(report.summary.fail_count, 1);
         assert_eq!(report.checks[3].name, "hotkey_probe");
+    }
+
+    #[test]
+    fn environment_doctor_warns_when_the_process_is_not_elevated() {
+        let hotkey_probe = "ctrl+alt+shift+f12"
+            .parse::<HotkeyBinding>()
+            .expect("doctor probe hotkey should parse");
+
+        let report = build_environment_report(
+            hotkey_probe,
+            Ok(()),
+            Ok(ProcessElevationStatus::NotElevated),
+        );
+
+        assert_eq!(report.summary.warn_count, 1);
+        assert_eq!(report.checks[4].name, "process_elevation");
     }
 }

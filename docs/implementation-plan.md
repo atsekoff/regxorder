@@ -142,7 +142,7 @@ The scriptable command-line surface over the SDK.
 Expected responsibilities:
 
 1. Record, play, abort, inspect, validate, import, and export commands.
-2. Diagnostics for environment, permissions, and backend capabilities.
+2. Diagnostics for environment, permissions, and backend capabilities, including doctor-style preflight checks and deeper diagnostics output.
 3. Minimal presentation logic only.
 
 ### regxorder-ui
@@ -408,10 +408,17 @@ Exit criteria:
 Deliverables:
 
 1. Working CLI commands.
-2. Diagnostics and doctor-style checks.
-3. SDK and CLI integration tests.
+2. Diagnostics and doctor-style checks for environment, recording, playback, and control-loop configuration.
+3. SDK and CLI integration tests that exercise the public CLI binary rather than private implementation helpers.
 4. Elevated-app support path when the process runs elevated.
 5. Optional global-hotkey start and stop controls for CLI record and play workflows.
+
+Current status:
+
+1. The CLI has `doctor` commands for `environment`, `recording`, `playback`, and `control` with machine-readable JSON output and doctor-style non-zero exits when checks fail.
+2. The CLI also has `diagnostics` commands for the same targets with deeper inspection output that does not treat failing checks as command failure by itself.
+3. Environment diagnostics currently probe RegisterHotKey availability, session-directory state, and current-process elevation so permission guidance is more actionable.
+4. CLI integration coverage now includes public-binary tests for doctor failure exits and JSON diagnostics output.
 
 Exit criteria:
 

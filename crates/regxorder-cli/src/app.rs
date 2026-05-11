@@ -24,7 +24,6 @@ use regxorder_win32::{
     wait_for_hotkey_activation, wait_for_hotkey_press_and_release,
 };
 use serde::Serialize;
-use serde_json::json;
 use thiserror::Error;
 
 const HOTKEY_SMOKE_IDENTIFIER: i32 = 1;
@@ -161,6 +160,16 @@ enum Command {
         command: DoctorCommand,
     },
 
+    /// Print deeper inspection data without doctor-style pass/fail exit behavior.
+    Diagnostics {
+        /// Emit machine-readable JSON instead of human-readable text.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+
+        #[command(subcommand)]
+        command: DoctorCommand,
+    },
+
     /// Register a global hotkey and print when it triggers.
     WatchHotkey {
         /// Modifier keys for the global hotkey.
@@ -288,6 +297,46 @@ struct DoctorControlOutput {
     checks: Vec<DiagnosticCheck>,
     control: ControlDoctorReport,
     playback: Option<PlaybackDoctorReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct DiagnosticEnvelope<T> {
+    target: &'static str,
+    report: T,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct EnvironmentDiagnosticsOutput {
+    current_working_directory: PathBuf,
+    session_directory: PathBuf,
+    doctor: EnvironmentDoctorReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct RecordingDiagnosticsDetails {
+    file_size_bytes: Option<u64>,
+    first_sequence: Option<u64>,
+    last_sequence: Option<u64>,
+    display: DisplayMetadata,
+    monitor_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct RecordingDiagnosticsOutput {
+    doctor: DoctorRecordingOutput,
+    details: Option<RecordingDiagnosticsDetails>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct PlaybackDiagnosticsOutput {
+    doctor: DoctorPlaybackOutput,
+    details: Option<RecordingDiagnosticsDetails>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct ControlDiagnosticsOutput {
+    doctor: DoctorControlOutput,
+    record_output_parent_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -429,6 +478,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             stop_hotkey,
         }),
         Command::Doctor { json, command } => run_doctor_command(command, json),
+        Command::Diagnostics { json, command } => run_diagnostics_command(command, json),
         Command::WatchHotkey {
             modifiers,
             key,
@@ -769,6 +819,59 @@ fn run_doctor_command(command: DoctorCommand, emit_json: bool) -> Result<(), Cli
     }
 }
 
+fn run_diagnostics_command(command: DoctorCommand, emit_json: bool) -> Result<(), CliError> {
+    match command {
+        DoctorCommand::Environment => {
+            let report = build_environment_diagnostics_output()?;
+            if emit_json {
+                print_diagnostic_json("environment", &report)?;
+            } else {
+                print_environment_diagnostics_output(&report);
+            }
+        }
+        DoctorCommand::Recording { input } => {
+            let report = build_recording_diagnostics_output(&input);
+            if emit_json {
+                print_diagnostic_json("recording", &report)?;
+            } else {
+                print_recording_diagnostics_output(&report);
+            }
+        }
+        DoctorCommand::Playback { input, speed } => {
+            let report = build_playback_diagnostics_output(&input, speed);
+            if emit_json {
+                print_diagnostic_json("playback", &report)?;
+            } else {
+                print_playback_diagnostics_output(&report);
+            }
+        }
+        DoctorCommand::Control {
+            record_output,
+            start_record_hotkey,
+            play_input,
+            play_speed,
+            start_play_hotkey,
+            stop_hotkey,
+        } => {
+            let report = build_control_diagnostics_output(DoctorControlConfiguration {
+                record_output,
+                start_record_hotkey,
+                play_input,
+                play_speed,
+                start_play_hotkey,
+                stop_hotkey,
+            });
+            if emit_json {
+                print_diagnostic_json("control", &report)?;
+            } else {
+                print_control_diagnostics_output(&report);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn build_environment_doctor_report() -> Result<EnvironmentDoctorReport, CliError> {
     let hotkey_probe = HotkeyBinding::new(
         vec![
@@ -784,6 +887,14 @@ fn build_environment_doctor_report() -> Result<EnvironmentDoctorReport, CliError
         backend_report,
         &default_session_directory(),
     ))
+}
+
+fn build_environment_diagnostics_output() -> Result<EnvironmentDiagnosticsOutput, CliError> {
+    Ok(EnvironmentDiagnosticsOutput {
+        current_working_directory: std::env::current_dir()?,
+        session_directory: default_session_directory(),
+        doctor: build_environment_doctor_report()?,
+    })
 }
 
 fn augment_environment_doctor_report_with_session_directory(
@@ -881,6 +992,26 @@ fn build_playback_doctor_output(path: &Path, speed: f64) -> DoctorPlaybackOutput
     }
 }
 
+fn build_recording_diagnostics_output(path: &Path) -> RecordingDiagnosticsOutput {
+    let doctor = build_recording_doctor_output(path);
+    let details = load_recording_for_doctor(&doctor.input_path)
+        .1
+        .as_ref()
+        .map(|recording| build_recording_diagnostics_details(&doctor.input_path, recording));
+
+    RecordingDiagnosticsOutput { doctor, details }
+}
+
+fn build_playback_diagnostics_output(path: &Path, speed: f64) -> PlaybackDiagnosticsOutput {
+    let doctor = build_playback_doctor_output(path, speed);
+    let details = load_recording_for_doctor(&doctor.input_path)
+        .1
+        .as_ref()
+        .map(|recording| build_recording_diagnostics_details(&doctor.input_path, recording));
+
+    PlaybackDiagnosticsOutput { doctor, details }
+}
+
 fn build_control_doctor_output(configuration: DoctorControlConfiguration) -> DoctorControlOutput {
     let DoctorControlConfiguration {
         record_output,
@@ -956,6 +1087,23 @@ fn build_control_doctor_output(configuration: DoctorControlConfiguration) -> Doc
         checks,
         control,
         playback,
+    }
+}
+
+fn build_control_diagnostics_output(
+    configuration: DoctorControlConfiguration,
+) -> ControlDiagnosticsOutput {
+    let doctor = build_control_doctor_output(configuration);
+    let record_output_parent_path = doctor
+        .record_output_path
+        .as_ref()
+        .and_then(|path| path.parent())
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf);
+
+    ControlDiagnosticsOutput {
+        doctor,
+        record_output_parent_path,
     }
 }
 
@@ -1169,19 +1317,23 @@ fn finish_doctor_command(summary: DiagnosticSummary) -> Result<(), CliError> {
     }
 }
 
-fn print_doctor_json<T>(target: &str, report: &T) -> Result<(), CliError>
+fn print_diagnostic_json<T>(target: &'static str, report: &T) -> Result<(), CliError>
 where
     T: Serialize,
 {
     println!(
         "{}",
-        serde_json::to_string_pretty(&json!({
-            "target": target,
-            "report": report,
-        }))?
+        serde_json::to_string_pretty(&DiagnosticEnvelope { target, report })?
     );
 
     Ok(())
+}
+
+fn print_doctor_json<T>(target: &'static str, report: &T) -> Result<(), CliError>
+where
+    T: Serialize,
+{
+    print_diagnostic_json(target, report)
 }
 
 fn print_environment_doctor_report(report: &EnvironmentDoctorReport) {
@@ -1197,6 +1349,16 @@ fn print_environment_doctor_report(report: &EnvironmentDoctorReport) {
     println!("hotkey_probe: {}", report.hotkey_probe);
     print_diagnostic_summary(report.summary);
     print_diagnostic_checks(&report.checks);
+}
+
+fn print_environment_diagnostics_output(report: &EnvironmentDiagnosticsOutput) {
+    println!("diagnostics target: environment");
+    println!(
+        "current_working_directory: {}",
+        report.current_working_directory.display()
+    );
+    println!("session_directory: {}", report.session_directory.display());
+    print_environment_doctor_report(&report.doctor);
 }
 
 fn print_recording_doctor_output(report: &DoctorRecordingOutput) {
@@ -1221,6 +1383,45 @@ fn print_recording_doctor_output(report: &DoctorRecordingOutput) {
     print_diagnostic_checks(&report.checks);
 }
 
+fn print_recording_diagnostics_output(report: &RecordingDiagnosticsOutput) {
+    println!("diagnostics target: recording");
+    print_recording_doctor_output(&report.doctor);
+
+    if let (Some(recording), Some(details)) = (&report.doctor.recording, &report.details) {
+        println!("file_size_bytes: {}", details.file_size_bytes.unwrap_or(0));
+        println!(
+            "virtual_display: origin=({}, {}) size={}x{}",
+            details.display.virtual_origin.x,
+            details.display.virtual_origin.y,
+            details.display.virtual_size.width,
+            details.display.virtual_size.height
+        );
+        println!("monitors: {}", details.monitor_count);
+
+        if let Some(first_sequence) = details.first_sequence {
+            println!("first_sequence: {}", first_sequence);
+        }
+
+        if let Some(last_sequence) = details.last_sequence {
+            println!("last_sequence: {}", last_sequence);
+        }
+
+        println!(
+            "peak_events_per_second: {}",
+            recording.metrics.peak_events_per_second
+        );
+        println!(
+            "action_counts: key_pressed={} key_released={} pointer_moved={} mouse_button_pressed={} mouse_button_released={} mouse_wheel_scrolled={}",
+            recording.metrics.action_counts.key_pressed_events,
+            recording.metrics.action_counts.key_released_events,
+            recording.metrics.action_counts.pointer_moved_events,
+            recording.metrics.action_counts.mouse_button_pressed_events,
+            recording.metrics.action_counts.mouse_button_released_events,
+            recording.metrics.action_counts.mouse_wheel_scrolled_events,
+        );
+    }
+}
+
 fn print_playback_doctor_output(report: &DoctorPlaybackOutput) {
     println!("doctor target: playback");
     println!("input_path: {}", report.input_path.display());
@@ -1234,6 +1435,28 @@ fn print_playback_doctor_output(report: &DoctorPlaybackOutput) {
 
     print_diagnostic_summary(report.summary);
     print_diagnostic_checks(&report.checks);
+}
+
+fn print_playback_diagnostics_output(report: &PlaybackDiagnosticsOutput) {
+    println!("diagnostics target: playback");
+    print_playback_doctor_output(&report.doctor);
+
+    if let (Some(playback), Some(details)) = (&report.doctor.playback, &report.details) {
+        println!("file_size_bytes: {}", details.file_size_bytes.unwrap_or(0));
+        println!(
+            "virtual_display: origin=({}, {}) size={}x{}",
+            details.display.virtual_origin.x,
+            details.display.virtual_origin.y,
+            details.display.virtual_size.width,
+            details.display.virtual_size.height
+        );
+        println!("monitors: {}", details.monitor_count);
+        println!(
+            "prepared_cleanup: skipped_unmatched_release_events={} appended_release_events={}",
+            playback.preparation_report.skipped_unmatched_release_events,
+            playback.preparation_report.appended_release_events,
+        );
+    }
 }
 
 fn print_control_doctor_output(report: &DoctorControlOutput) {
@@ -1256,6 +1479,52 @@ fn print_control_doctor_output(report: &DoctorControlOutput) {
 
     print_diagnostic_summary(report.summary);
     print_diagnostic_checks(&report.checks);
+}
+
+fn print_control_diagnostics_output(report: &ControlDiagnosticsOutput) {
+    println!("diagnostics target: control");
+    print_control_doctor_output(&report.doctor);
+
+    if let Some(record_output_parent_path) = &report.record_output_parent_path {
+        println!(
+            "record_output_parent_path: {}",
+            record_output_parent_path.display()
+        );
+    }
+
+    println!(
+        "start_record_hotkey: {}",
+        report
+            .doctor
+            .control
+            .start_record_hotkey
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| String::from("<disabled>"))
+    );
+    println!(
+        "start_play_hotkey: {}",
+        report
+            .doctor
+            .control
+            .start_play_hotkey
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| String::from("<disabled>"))
+    );
+}
+
+fn build_recording_diagnostics_details(
+    path: &Path,
+    recording: &Recording,
+) -> RecordingDiagnosticsDetails {
+    RecordingDiagnosticsDetails {
+        file_size_bytes: fs::metadata(path).ok().map(|metadata| metadata.len()),
+        first_sequence: recording.events().first().map(|event| event.sequence),
+        last_sequence: recording.events().last().map(|event| event.sequence),
+        display: recording.metadata().display.clone(),
+        monitor_count: recording.metadata().display.monitors.len(),
+    }
 }
 
 fn print_diagnostic_summary(summary: DiagnosticSummary) {
