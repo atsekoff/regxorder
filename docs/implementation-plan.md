@@ -358,11 +358,12 @@ Deliverables:
 3. Hook fallback backends.
 4. RegisterHotKey integration.
 5. Diagnostics for registration failures.
+6. CLI smoke path for manual global hotkey validation.
 
 Exit criteria:
 
 1. Live capture works for standard desktop apps.
-2. Hotkeys work while the app is not focused.
+2. Hotkeys work while the app is not focused and can be validated from the CLI.
 3. High-frequency mouse input does not drop events in normal conditions.
 
 ### Phase 4 - Playback Engine
@@ -389,11 +390,13 @@ Deliverables:
 2. Diagnostics and doctor-style checks.
 3. SDK and CLI integration tests.
 4. Elevated-app support path when the process runs elevated.
+5. Optional global-hotkey start and stop controls for CLI record and play workflows.
 
 Exit criteria:
 
 1. The CLI can drive the core workflows without private hooks into the implementation.
 2. Capability and permission failures are actionable.
+3. Recording and playback can be started or stopped by configured global hotkeys when desired.
 
 ### Phase 6 - Slint Desktop UI
 

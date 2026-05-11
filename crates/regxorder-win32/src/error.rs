@@ -6,6 +6,12 @@ pub enum WindowsBackendError {
     #[error(transparent)]
     Validation(#[from] regxorder_core::ValidationError),
 
+    #[error("at least one hotkey registration is required")]
+    NoHotkeyRegistrations,
+
+    #[error("hotkey identifier {identifier} was registered more than once")]
+    DuplicateHotkeyIdentifier { identifier: i32 },
+
     #[error("playback was interrupted")]
     Interrupted,
 
@@ -14,6 +20,14 @@ pub enum WindowsBackendError {
 
     #[error("the recording thread terminated unexpectedly")]
     ThreadPanic,
+
+    #[error("failed to register global hotkey {identifier} ({description}): {source}")]
+    HotkeyRegistrationFailed {
+        identifier: i32,
+        description: String,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[error(
         "SendInput submitted {submitted} of {requested} events; playback may be blocked by UIPI or another input filter"
