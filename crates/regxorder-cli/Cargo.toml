@@ -9,5 +9,7 @@ description = "Command-line interface for regxorder"
 clap.workspace = true
 regxorder-core = { path = "../regxorder-core" }
 regxorder-win32 = { path = "../regxorder-win32" }
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 ctrlc = "3.4"

@@ -1,5 +1,6 @@
 //! Platform-agnostic domain types and serialization helpers for regxorder.
 
+mod diagnostics;
 mod error;
 mod event;
 mod format;
@@ -7,6 +8,11 @@ mod hotkey;
 mod recording;
 mod session;
 
+pub use diagnostics::{
+    ControlDoctorReport, DiagnosticCheck, DiagnosticStatus, DiagnosticSummary,
+    EnvironmentDoctorReport, PlaybackDoctorReport, RecordingDoctorReport, diagnose_playback,
+    diagnose_recording,
+};
 pub use error::{RecordingError, ValidationError};
 pub use event::{
     AbsoluteScreenPoint, DisplayMetadata, Dpi, ElapsedTime, InputAction, InputEvent, KeyDescriptor,

@@ -11,16 +11,20 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use regxorder_core::{
-    AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, HotkeyBinding, HotkeyKey, HotkeyModifier,
-    HotkeyParseError, InputAction, InputEvent, KeyDescriptor, Recording, RecordingError,
-    RecordingMetadata, RecordingMetrics, ScanCode, SchemaVersion, ScreenSize, SpeedMultiplier,
-    ValidationError,
+    AbsoluteScreenPoint, ControlDoctorReport, DiagnosticCheck, DiagnosticStatus, DiagnosticSummary,
+    DisplayMetadata, ElapsedTime, EnvironmentDoctorReport, HotkeyBinding, HotkeyKey,
+    HotkeyModifier, HotkeyParseError, InputAction, InputEvent, KeyDescriptor, PlaybackDoctorReport,
+    Recording, RecordingDoctorReport, RecordingError, RecordingMetadata, RecordingMetrics,
+    ScanCode, SchemaVersion, ScreenSize, SpeedMultiplier, ValidationError, diagnose_playback,
+    diagnose_recording,
 };
 use regxorder_win32::{
     ControlAction, ControlBindings, ControlController, HotkeyRegistration, HotkeyWaitOutcome,
-    RecordingStrategy, WindowsBackendError, wait_for_hotkey_activation,
-    wait_for_hotkey_press_and_release,
+    RecordingStrategy, WindowsBackendError, diagnose_windows_environment,
+    wait_for_hotkey_activation, wait_for_hotkey_press_and_release,
 };
+use serde::Serialize;
+use serde_json::json;
 use thiserror::Error;
 
 const HOTKEY_SMOKE_IDENTIFIER: i32 = 1;
@@ -147,6 +151,16 @@ enum Command {
         stop_hotkey: HotkeyBinding,
     },
 
+    /// Run preflight checks for environment, recordings, playback, or control-loop configuration.
+    Doctor {
+        /// Emit machine-readable JSON instead of human-readable text.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+
+        #[command(subcommand)]
+        command: DoctorCommand,
+    },
+
     /// Register a global hotkey and print when it triggers.
     WatchHotkey {
         /// Modifier keys for the global hotkey.
@@ -173,6 +187,57 @@ enum RecordingStrategyArgument {
     LowLevelHooks,
 }
 
+#[derive(Debug, Subcommand)]
+enum DoctorCommand {
+    /// Check whether the current Windows environment can arm the supported backends.
+    Environment,
+
+    /// Check whether a recording file is readable, valid, and well-formed for replay.
+    Recording {
+        /// Path to the recording JSON file. A bare filename is resolved from sessions/ if present.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        input: PathBuf,
+    },
+
+    /// Check whether playback preparation succeeds for a recording at the requested speed.
+    Playback {
+        /// Path to the recording JSON file. A bare filename is resolved from sessions/ if present.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        input: PathBuf,
+
+        /// Playback speed multiplier. Values above 1.0 speed up playback.
+        #[arg(long, default_value_t = 1.0)]
+        speed: f64,
+    },
+
+    /// Check whether a control-loop configuration is internally consistent before arming hotkeys.
+    Control {
+        /// Path to write captured recordings when the record hotkey fires.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        record_output: Option<PathBuf>,
+
+        /// Hotkey that starts a recording action inside the control loop.
+        #[arg(long, value_name = "HOTKEY")]
+        start_record_hotkey: Option<HotkeyBinding>,
+
+        /// Path to the recording file to play when the playback hotkey fires.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        play_input: Option<PathBuf>,
+
+        /// Playback speed multiplier applied to control-loop playback actions.
+        #[arg(long, default_value_t = 1.0)]
+        play_speed: f64,
+
+        /// Hotkey that starts a playback action inside the control loop.
+        #[arg(long, value_name = "HOTKEY")]
+        start_play_hotkey: Option<HotkeyBinding>,
+
+        /// Hotkey that stops the active recording or playback action.
+        #[arg(long, value_name = "HOTKEY")]
+        stop_hotkey: HotkeyBinding,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ControlCommandConfiguration {
     record_output: Option<PathBuf>,
@@ -184,6 +249,45 @@ struct ControlCommandConfiguration {
     play_speed: f64,
     start_play_hotkey: Option<HotkeyBinding>,
     stop_hotkey: HotkeyBinding,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct DoctorControlConfiguration {
+    record_output: Option<PathBuf>,
+    start_record_hotkey: Option<HotkeyBinding>,
+    play_input: Option<PathBuf>,
+    play_speed: f64,
+    start_play_hotkey: Option<HotkeyBinding>,
+    stop_hotkey: HotkeyBinding,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct DoctorRecordingOutput {
+    input_path: PathBuf,
+    summary: DiagnosticSummary,
+    checks: Vec<DiagnosticCheck>,
+    recording: Option<RecordingDoctorReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct DoctorPlaybackOutput {
+    input_path: PathBuf,
+    requested_speed: f64,
+    summary: DiagnosticSummary,
+    checks: Vec<DiagnosticCheck>,
+    recording: Option<RecordingDoctorReport>,
+    playback: Option<PlaybackDoctorReport>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct DoctorControlOutput {
+    record_output_path: Option<PathBuf>,
+    play_input_path: Option<PathBuf>,
+    requested_play_speed: f64,
+    summary: DiagnosticSummary,
+    checks: Vec<DiagnosticCheck>,
+    control: ControlDoctorReport,
+    playback: Option<PlaybackDoctorReport>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -256,6 +360,8 @@ pub enum CliError {
     #[error("failed to read or write a recording file: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
     Recording(#[from] RecordingError),
     #[error(transparent)]
     Validation(#[from] ValidationError),
@@ -271,6 +377,8 @@ pub enum CliError {
     InvalidControlRecordingConfiguration,
     #[error("control playback requires both --play-input and --start-play-hotkey")]
     InvalidControlPlaybackConfiguration,
+    #[error("doctor reported one or more failing checks")]
+    DoctorCheckFailed,
 }
 
 pub fn run(cli: Cli) -> Result<(), CliError> {
@@ -320,6 +428,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             start_play_hotkey,
             stop_hotkey,
         }),
+        Command::Doctor { json, command } => run_doctor_command(command, json),
         Command::WatchHotkey {
             modifiers,
             key,
@@ -599,6 +708,584 @@ fn run_control_command(configuration: ControlCommandConfiguration) -> Result<(),
 
     println!("control loop stopped");
     Ok(())
+}
+
+fn run_doctor_command(command: DoctorCommand, emit_json: bool) -> Result<(), CliError> {
+    match command {
+        DoctorCommand::Environment => {
+            let report = build_environment_doctor_report()?;
+            if emit_json {
+                print_doctor_json("environment", &report)?;
+            } else {
+                print_environment_doctor_report(&report);
+            }
+
+            finish_doctor_command(report.summary)
+        }
+        DoctorCommand::Recording { input } => {
+            let report = build_recording_doctor_output(&input);
+            if emit_json {
+                print_doctor_json("recording", &report)?;
+            } else {
+                print_recording_doctor_output(&report);
+            }
+
+            finish_doctor_command(report.summary)
+        }
+        DoctorCommand::Playback { input, speed } => {
+            let report = build_playback_doctor_output(&input, speed);
+            if emit_json {
+                print_doctor_json("playback", &report)?;
+            } else {
+                print_playback_doctor_output(&report);
+            }
+
+            finish_doctor_command(report.summary)
+        }
+        DoctorCommand::Control {
+            record_output,
+            start_record_hotkey,
+            play_input,
+            play_speed,
+            start_play_hotkey,
+            stop_hotkey,
+        } => {
+            let report = build_control_doctor_output(DoctorControlConfiguration {
+                record_output,
+                start_record_hotkey,
+                play_input,
+                play_speed,
+                start_play_hotkey,
+                stop_hotkey,
+            });
+            if emit_json {
+                print_doctor_json("control", &report)?;
+            } else {
+                print_control_doctor_output(&report);
+            }
+
+            finish_doctor_command(report.summary)
+        }
+    }
+}
+
+fn build_environment_doctor_report() -> Result<EnvironmentDoctorReport, CliError> {
+    let hotkey_probe = HotkeyBinding::new(
+        vec![
+            HotkeyModifier::Control,
+            HotkeyModifier::Alt,
+            HotkeyModifier::Shift,
+        ],
+        HotkeyKey::F12,
+    )?;
+    let backend_report = diagnose_windows_environment(hotkey_probe);
+
+    Ok(augment_environment_doctor_report_with_session_directory(
+        backend_report,
+        &default_session_directory(),
+    ))
+}
+
+fn augment_environment_doctor_report_with_session_directory(
+    environment_report: EnvironmentDoctorReport,
+    session_directory: &Path,
+) -> EnvironmentDoctorReport {
+    let EnvironmentDoctorReport {
+        target_os,
+        target_arch,
+        recording_backends,
+        playback_backend,
+        hotkey_backend,
+        hotkey_probe,
+        checks,
+        ..
+    } = environment_report;
+    let mut checks = checks;
+    checks.push(check_session_directory(session_directory));
+
+    EnvironmentDoctorReport::new(
+        target_os,
+        target_arch,
+        recording_backends,
+        playback_backend,
+        hotkey_backend,
+        hotkey_probe,
+        checks,
+    )
+}
+
+fn build_recording_doctor_output(path: &Path) -> DoctorRecordingOutput {
+    let input_path = resolve_session_input_path(path);
+    let (mut checks, recording) = load_recording_for_doctor(&input_path);
+    let recording_report = recording.as_ref().map(diagnose_recording);
+
+    if let Some(report) = &recording_report {
+        checks.extend(report.checks.iter().cloned());
+    }
+
+    DoctorRecordingOutput {
+        input_path,
+        summary: DiagnosticSummary::from_checks(&checks),
+        checks,
+        recording: recording_report,
+    }
+}
+
+fn build_playback_doctor_output(path: &Path, speed: f64) -> DoctorPlaybackOutput {
+    let input_path = resolve_session_input_path(path);
+    let mut checks = Vec::new();
+    let speed_multiplier = match SpeedMultiplier::new(speed) {
+        Ok(speed_multiplier) => Some(speed_multiplier),
+        Err(error) => {
+            checks.push(DiagnosticCheck::fail(
+                "speed_multiplier",
+                format!("requested playback speed is invalid: {error}"),
+            ));
+            None
+        }
+    };
+    let (recording_checks, recording) = load_recording_for_doctor(&input_path);
+    checks.extend(recording_checks);
+
+    let recording_report = recording.as_ref().map(diagnose_recording);
+    if let Some(report) = &recording_report {
+        checks.extend(report.checks.iter().cloned());
+    }
+
+    let playback_report = match (recording.as_ref(), speed_multiplier) {
+        (Some(recording), Some(speed_multiplier)) => {
+            match diagnose_playback(recording, speed_multiplier) {
+                Ok(report) => {
+                    checks.extend(report.checks.iter().cloned());
+                    Some(report)
+                }
+                Err(error) => {
+                    checks.push(DiagnosticCheck::fail(
+                        "prepared_playback_plan",
+                        format!("playback preparation failed: {error}"),
+                    ));
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+
+    DoctorPlaybackOutput {
+        input_path,
+        requested_speed: speed,
+        summary: DiagnosticSummary::from_checks(&checks),
+        checks,
+        recording: recording_report,
+        playback: playback_report,
+    }
+}
+
+fn build_control_doctor_output(configuration: DoctorControlConfiguration) -> DoctorControlOutput {
+    let DoctorControlConfiguration {
+        record_output,
+        start_record_hotkey,
+        play_input,
+        play_speed,
+        start_play_hotkey,
+        stop_hotkey,
+    } = configuration;
+    let record_output_path = record_output
+        .as_ref()
+        .map(|path| resolve_session_output_path(path));
+    let play_input_path = play_input
+        .as_ref()
+        .map(|path| resolve_session_input_path(path));
+
+    let control = build_control_doctor_report(
+        record_output_path.as_ref(),
+        start_record_hotkey.clone(),
+        play_input_path.as_ref(),
+        start_play_hotkey.clone(),
+        stop_hotkey,
+        play_speed,
+    );
+    let mut checks = control.checks.clone();
+
+    if let Some(record_output_path) = &record_output_path {
+        checks.push(check_output_path_parent(record_output_path));
+    }
+
+    let speed_multiplier = match SpeedMultiplier::new(play_speed) {
+        Ok(speed_multiplier) => Some(speed_multiplier),
+        Err(error) => {
+            checks.push(DiagnosticCheck::fail(
+                "playback_speed",
+                format!("requested playback speed is invalid: {error}"),
+            ));
+            None
+        }
+    };
+
+    let playback = if let Some(play_input_path) = &play_input_path {
+        let (playback_checks, recording) = load_recording_for_doctor(play_input_path);
+        checks.extend(playback_checks);
+
+        match (recording.as_ref(), speed_multiplier) {
+            (Some(recording), Some(speed_multiplier)) => {
+                match diagnose_playback(recording, speed_multiplier) {
+                    Ok(report) => {
+                        checks.extend(report.checks.iter().cloned());
+                        Some(report)
+                    }
+                    Err(error) => {
+                        checks.push(DiagnosticCheck::fail(
+                            "control_playback_plan",
+                            format!("control playback preparation failed: {error}"),
+                        ));
+                        None
+                    }
+                }
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    DoctorControlOutput {
+        record_output_path,
+        play_input_path,
+        requested_play_speed: play_speed,
+        summary: DiagnosticSummary::from_checks(&checks),
+        checks,
+        control,
+        playback,
+    }
+}
+
+fn build_control_doctor_report(
+    record_output_path: Option<&PathBuf>,
+    start_record_hotkey: Option<HotkeyBinding>,
+    play_input_path: Option<&PathBuf>,
+    start_play_hotkey: Option<HotkeyBinding>,
+    stop_hotkey: HotkeyBinding,
+    play_speed: f64,
+) -> ControlDoctorReport {
+    let mut checks = Vec::with_capacity(4);
+
+    checks.push(DiagnosticCheck::pass(
+        "stop_hotkey",
+        format!("control stop hotkey is {}", stop_hotkey),
+    ));
+
+    checks.push(match (record_output_path, start_record_hotkey.as_ref()) {
+        (Some(record_output_path), Some(start_record_hotkey)) => DiagnosticCheck::pass(
+            "recording_action",
+            format!(
+                "recording action is armed on {} -> {}",
+                start_record_hotkey,
+                record_output_path.display()
+            ),
+        ),
+        (None, None) => DiagnosticCheck::warn(
+            "recording_action",
+            "recording action is not configured for this control loop",
+        ),
+        _ => DiagnosticCheck::fail(
+            "recording_action",
+            "control recording requires both --record-output and --start-record-hotkey",
+        ),
+    });
+
+    checks.push(match (play_input_path, start_play_hotkey.as_ref()) {
+        (Some(play_input_path), Some(start_play_hotkey)) => DiagnosticCheck::pass(
+            "playback_action",
+            format!(
+                "playback action is armed on {} -> {} at {}x",
+                start_play_hotkey,
+                play_input_path.display(),
+                play_speed,
+            ),
+        ),
+        (None, None) => DiagnosticCheck::warn(
+            "playback_action",
+            "playback action is not configured for this control loop",
+        ),
+        _ => DiagnosticCheck::fail(
+            "playback_action",
+            "control playback requires both --play-input and --start-play-hotkey",
+        ),
+    });
+
+    checks.push(
+        match ControlBindings::new(start_record_hotkey.clone(), start_play_hotkey.clone()) {
+            Ok(_) => DiagnosticCheck::pass(
+                "control_bindings",
+                "idle control-loop start hotkeys are internally consistent",
+            ),
+            Err(error) => DiagnosticCheck::fail(
+                "control_bindings",
+                format!("control-loop binding validation failed: {error}"),
+            ),
+        },
+    );
+
+    ControlDoctorReport::new(start_record_hotkey, start_play_hotkey, stop_hotkey, checks)
+}
+
+fn load_recording_for_doctor(path: &Path) -> (Vec<DiagnosticCheck>, Option<Recording>) {
+    let mut checks = Vec::with_capacity(2);
+
+    match fs::read_to_string(path) {
+        Ok(input) => {
+            let input_file_summary = match fs::metadata(path) {
+                Ok(metadata) => format!(
+                    "recording file is readable at {} ({} bytes)",
+                    path.display(),
+                    metadata.len()
+                ),
+                Err(_) => format!("recording file is readable at {}", path.display()),
+            };
+            checks.push(DiagnosticCheck::pass("input_file", input_file_summary));
+
+            match Recording::from_json_str(&input) {
+                Ok(recording) => {
+                    checks.push(DiagnosticCheck::pass(
+                        "recording_parse",
+                        "recording payload parsed and validated successfully",
+                    ));
+                    (checks, Some(recording))
+                }
+                Err(error) => {
+                    checks.push(DiagnosticCheck::fail(
+                        "recording_parse",
+                        format!("recording payload is invalid: {error}"),
+                    ));
+                    (checks, None)
+                }
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            checks.push(DiagnosticCheck::fail(
+                "input_file",
+                format!("recording file was not found at {}", path.display()),
+            ));
+            (checks, None)
+        }
+        Err(error) => {
+            checks.push(DiagnosticCheck::fail(
+                "input_file",
+                format!("failed to read {}: {error}", path.display()),
+            ));
+            (checks, None)
+        }
+    }
+}
+
+fn check_session_directory(path: &Path) -> DiagnosticCheck {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => DiagnosticCheck::pass(
+            "session_directory",
+            format!("session directory is available at {}", path.display()),
+        ),
+        Ok(_) => DiagnosticCheck::fail(
+            "session_directory",
+            format!(
+                "session path exists but is not a directory: {}",
+                path.display()
+            ),
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => DiagnosticCheck::warn(
+            "session_directory",
+            format!(
+                "session directory {} does not exist yet; it will be created on first write",
+                path.display()
+            ),
+        ),
+        Err(error) => DiagnosticCheck::fail(
+            "session_directory",
+            format!(
+                "failed to inspect session directory {}: {error}",
+                path.display()
+            ),
+        ),
+    }
+}
+
+fn check_output_path_parent(path: &Path) -> DiagnosticCheck {
+    let Some(parent) = path.parent() else {
+        return DiagnosticCheck::pass(
+            "record_output_parent",
+            format!(
+                "recording output path {} has no parent directory to verify",
+                path.display()
+            ),
+        );
+    };
+
+    if parent.as_os_str().is_empty() {
+        return DiagnosticCheck::pass(
+            "record_output_parent",
+            format!(
+                "recording output path {} uses the current directory",
+                path.display()
+            ),
+        );
+    }
+
+    match fs::metadata(parent) {
+        Ok(metadata) if metadata.is_dir() => DiagnosticCheck::pass(
+            "record_output_parent",
+            format!(
+                "recording output directory is available at {}",
+                parent.display()
+            ),
+        ),
+        Ok(_) => DiagnosticCheck::fail(
+            "record_output_parent",
+            format!(
+                "recording output parent exists but is not a directory: {}",
+                parent.display()
+            ),
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => DiagnosticCheck::warn(
+            "record_output_parent",
+            format!(
+                "recording output directory {} does not exist yet; it will be created on first write",
+                parent.display()
+            ),
+        ),
+        Err(error) => DiagnosticCheck::fail(
+            "record_output_parent",
+            format!(
+                "failed to inspect recording output directory {}: {error}",
+                parent.display()
+            ),
+        ),
+    }
+}
+
+fn finish_doctor_command(summary: DiagnosticSummary) -> Result<(), CliError> {
+    if summary.has_failures() {
+        Err(CliError::DoctorCheckFailed)
+    } else {
+        Ok(())
+    }
+}
+
+fn print_doctor_json<T>(target: &str, report: &T) -> Result<(), CliError>
+where
+    T: Serialize,
+{
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "target": target,
+            "report": report,
+        }))?
+    );
+
+    Ok(())
+}
+
+fn print_environment_doctor_report(report: &EnvironmentDoctorReport) {
+    println!("doctor target: environment");
+    println!("target_os: {}", report.target_os);
+    println!("target_arch: {}", report.target_arch);
+    println!(
+        "recording_backends: {}",
+        report.recording_backends.join(", ")
+    );
+    println!("playback_backend: {}", report.playback_backend);
+    println!("hotkey_backend: {}", report.hotkey_backend);
+    println!("hotkey_probe: {}", report.hotkey_probe);
+    print_diagnostic_summary(report.summary);
+    print_diagnostic_checks(&report.checks);
+}
+
+fn print_recording_doctor_output(report: &DoctorRecordingOutput) {
+    println!("doctor target: recording");
+    println!("input_path: {}", report.input_path.display());
+
+    if let Some(recording) = &report.recording {
+        println!(
+            "title: {}",
+            recording.title.as_deref().unwrap_or("<untitled>")
+        );
+        println!("schema: {}", recording.schema_version);
+        println!("events: {}", recording.event_count);
+        println!("duration_us: {}", recording.duration_micros);
+        println!(
+            "average_events_per_second: {:.2}",
+            recording.average_events_per_second
+        );
+    }
+
+    print_diagnostic_summary(report.summary);
+    print_diagnostic_checks(&report.checks);
+}
+
+fn print_playback_doctor_output(report: &DoctorPlaybackOutput) {
+    println!("doctor target: playback");
+    println!("input_path: {}", report.input_path.display());
+    println!("requested_speed: {}", report.requested_speed);
+
+    if let Some(playback) = &report.playback {
+        println!("canonical_events: {}", playback.canonical_event_count);
+        println!("prepared_events: {}", playback.prepared_event_count);
+        println!("prepared_speed: {}", playback.speed_multiplier.get());
+    }
+
+    print_diagnostic_summary(report.summary);
+    print_diagnostic_checks(&report.checks);
+}
+
+fn print_control_doctor_output(report: &DoctorControlOutput) {
+    println!("doctor target: control");
+
+    if let Some(record_output_path) = &report.record_output_path {
+        println!("record_output_path: {}", record_output_path.display());
+    }
+
+    if let Some(play_input_path) = &report.play_input_path {
+        println!("play_input_path: {}", play_input_path.display());
+    }
+
+    println!("requested_play_speed: {}", report.requested_play_speed);
+    println!("stop_hotkey: {}", report.control.stop_hotkey);
+
+    if let Some(playback) = &report.playback {
+        println!("control_prepared_events: {}", playback.prepared_event_count);
+    }
+
+    print_diagnostic_summary(report.summary);
+    print_diagnostic_checks(&report.checks);
+}
+
+fn print_diagnostic_summary(summary: DiagnosticSummary) {
+    println!(
+        "overall_status: {}",
+        format_diagnostic_status(summary.overall_status())
+    );
+    println!(
+        "check_counts: pass={} warn={} fail={}",
+        summary.pass_count, summary.warn_count, summary.fail_count
+    );
+}
+
+fn print_diagnostic_checks(checks: &[DiagnosticCheck]) {
+    for check in checks {
+        println!(
+            "[{}] {}: {}",
+            format_diagnostic_status(check.status),
+            check.name,
+            check.summary
+        );
+    }
+}
+
+fn format_diagnostic_status(status: DiagnosticStatus) -> &'static str {
+    match status {
+        DiagnosticStatus::Pass => "pass",
+        DiagnosticStatus::Warn => "warn",
+        DiagnosticStatus::Fail => "fail",
+    }
 }
 
 fn write_sample_recording(path: &Path, title: Option<&str>) -> Result<(), CliError> {
@@ -1056,18 +1743,28 @@ fn ensure_parent_directory_exists(path: &Path) -> Result<(), CliError> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     use clap::Parser;
 
     use super::{
-        Cli, CliError, Command, ControlCommandConfiguration, HotkeyKeyArgument,
-        HotkeyModifierArgument, RecordingStrategyArgument, average_events_per_second,
-        format_binary_size, format_stop_controls, hotkey_binding_from_arguments,
-        resolve_session_input_path, resolve_session_output_path, run_control_command,
-        sample_recording,
+        Cli, CliError, Command, ControlCommandConfiguration, DoctorCommand,
+        DoctorControlConfiguration, HotkeyKeyArgument, HotkeyModifierArgument,
+        RecordingStrategyArgument, augment_environment_doctor_report_with_session_directory,
+        average_events_per_second, build_control_doctor_output, build_playback_doctor_output,
+        build_recording_doctor_output, format_binary_size, format_stop_controls,
+        hotkey_binding_from_arguments, resolve_session_input_path, resolve_session_output_path,
+        run_control_command, sample_recording, write_recording,
     };
-    use regxorder_core::{HotkeyBinding, RecordingActionCounts, RecordingMetrics};
+    use regxorder_core::{
+        AbsoluteScreenPoint, DiagnosticCheck, DiagnosticStatus, DisplayMetadata, ElapsedTime,
+        HotkeyBinding, InputAction, InputEvent, KeyDescriptor, Recording, RecordingActionCounts,
+        RecordingMetadata, RecordingMetrics, ScanCode, SchemaVersion, ScreenSize,
+    };
     use regxorder_win32::WindowsBackendError;
 
     #[test]
@@ -1261,5 +1958,174 @@ mod tests {
             error,
             CliError::WindowsBackend(WindowsBackendError::NoControlActionHotkeys)
         ));
+    }
+
+    #[test]
+    fn doctor_playback_parser_accepts_json_output_and_speed() {
+        let cli = Cli::try_parse_from([
+            "regxorder-cli",
+            "doctor",
+            "--json",
+            "playback",
+            "--input",
+            "demo.json",
+            "--speed",
+            "2.5",
+        ])
+        .expect("doctor playback command should parse");
+
+        match cli.command {
+            Command::Doctor {
+                json,
+                command: DoctorCommand::Playback { input, speed },
+            } => {
+                assert!(json);
+                assert_eq!(input, PathBuf::from("demo.json"));
+                assert_eq!(speed, 2.5);
+            }
+            _ => panic!("expected the doctor playback command variant"),
+        }
+    }
+
+    #[test]
+    fn recording_doctor_reports_missing_input_files_as_failures() {
+        let report = build_recording_doctor_output(Path::new("missing-doctor-input.json"));
+
+        assert!(report.summary.has_failures());
+        assert!(report.recording.is_none());
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.name == "input_file" && check.status == DiagnosticStatus::Fail)
+        );
+    }
+
+    #[test]
+    fn playback_doctor_reports_preparation_cleanup_warnings() {
+        let recording_path = unique_temp_path("doctor-playback-warning.json");
+        let recording = Recording::new(
+            sample_metadata(),
+            vec![
+                InputEvent {
+                    sequence: 0,
+                    elapsed_time: ElapsedTime::from_micros(0),
+                    action: InputAction::KeyReleased {
+                        key: sample_key_descriptor(),
+                    },
+                },
+                InputEvent {
+                    sequence: 1,
+                    elapsed_time: ElapsedTime::from_micros(1_000),
+                    action: InputAction::KeyPressed {
+                        key: sample_key_descriptor(),
+                    },
+                },
+            ],
+        )
+        .expect("sample recording should be valid");
+        write_recording(&recording_path, &recording)
+            .expect("doctor test recording should be written");
+
+        let report = build_playback_doctor_output(&recording_path, 1.0);
+
+        assert!(report.summary.warn_count > 0);
+        assert_eq!(
+            report
+                .playback
+                .as_ref()
+                .expect("playback report should be present")
+                .preparation_report
+                .skipped_unmatched_release_events,
+            1
+        );
+        assert_eq!(
+            report
+                .playback
+                .as_ref()
+                .expect("playback report should be present")
+                .preparation_report
+                .appended_release_events,
+            1
+        );
+
+        let _ = fs::remove_file(&recording_path);
+    }
+
+    #[test]
+    fn control_doctor_reports_incomplete_recording_configuration_as_failures() {
+        let report = build_control_doctor_output(DoctorControlConfiguration {
+            record_output: Some(PathBuf::from("demo.json")),
+            start_record_hotkey: None,
+            play_input: None,
+            play_speed: 1.0,
+            start_play_hotkey: None,
+            stop_hotkey: "ctrl+shift+f12"
+                .parse::<HotkeyBinding>()
+                .expect("stop hotkey should parse"),
+        });
+
+        assert!(report.summary.has_failures());
+        assert!(report.checks.iter().any(|check| {
+            check.name == "recording_action" && check.status == DiagnosticStatus::Fail
+        }));
+    }
+
+    #[test]
+    fn environment_doctor_warns_when_session_directory_is_missing() {
+        let session_directory = unique_temp_path("doctor-session-directory");
+        let base_report = regxorder_core::EnvironmentDoctorReport::new(
+            String::from("windows"),
+            String::from("x86_64"),
+            vec![String::from("raw_input")],
+            String::from("send_input"),
+            String::from("register_hotkey"),
+            "ctrl+alt+shift+f12"
+                .parse::<HotkeyBinding>()
+                .expect("doctor probe hotkey should parse"),
+            vec![DiagnosticCheck::pass("hotkey_probe", "probe succeeded")],
+        );
+
+        let report = augment_environment_doctor_report_with_session_directory(
+            base_report,
+            &session_directory,
+        );
+
+        assert_eq!(report.summary.warn_count, 1);
+        assert!(report.checks.iter().any(|check| {
+            check.name == "session_directory" && check.status == DiagnosticStatus::Warn
+        }));
+    }
+
+    fn sample_metadata() -> RecordingMetadata {
+        RecordingMetadata {
+            schema_version: SchemaVersion::new(1),
+            title: Some(String::from("CLI doctor sample")),
+            display: DisplayMetadata {
+                virtual_origin: AbsoluteScreenPoint { x: 0, y: 0 },
+                virtual_size: ScreenSize {
+                    width: 1920,
+                    height: 1080,
+                },
+                monitors: Vec::new(),
+            },
+        }
+    }
+
+    fn sample_key_descriptor() -> KeyDescriptor {
+        KeyDescriptor {
+            scan_code: ScanCode::new(30),
+            logical_name: Some(String::from("A")),
+            extended: false,
+        }
+    }
+
+    fn unique_temp_path(file_name: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after the unix epoch")
+            .as_nanos();
+
+        std::env::temp_dir().join(format!("regxorder-{timestamp}-{file_name}"))
     }
 }

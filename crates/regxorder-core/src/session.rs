@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::{
     ElapsedTime, InputAction, InputEvent, KeyDescriptor, MouseButton, Recording, ValidationError,
 };
@@ -77,7 +79,7 @@ fn push_action(events: &mut Vec<InputEvent>, elapsed_time: ElapsedTime, action: 
 }
 
 /// A summary of synthetic releases appended while finalizing a captured recording session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct RecordingFinalizationReport {
     pub appended_release_events: usize,
 }
@@ -106,7 +108,7 @@ pub fn finalize_recording_session(
 }
 
 /// A summary of the semantic cleanup applied while building a derived playback plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct PlaybackPreparationReport {
     pub skipped_unmatched_release_events: usize,
     pub appended_release_events: usize,

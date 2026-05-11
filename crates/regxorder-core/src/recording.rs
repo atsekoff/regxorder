@@ -21,7 +21,7 @@ pub struct RecordingMetadata {
 }
 
 /// Counts of canonical action kinds contained in a recording.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct RecordingActionCounts {
     pub key_pressed_events: usize,
     pub key_released_events: usize,
@@ -43,7 +43,7 @@ impl RecordingActionCounts {
 }
 
 /// Lightweight metrics computed from an in-memory recording.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub struct RecordingMetrics {
     pub total_events: usize,
     pub duration_micros: u64,

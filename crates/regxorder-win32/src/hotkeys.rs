@@ -258,6 +258,19 @@ pub fn wait_for_hotkey_activation(
     }
 }
 
+pub(crate) fn probe_hotkey_registration(
+    registration: HotkeyRegistration,
+) -> Result<(), WindowsBackendError> {
+    let registrations = [registration];
+
+    validate_hotkey_registrations(&registrations)?;
+    ensure_hotkey_message_queue()?;
+    register_hotkeys(&registrations)?;
+    unregister_hotkeys(&registrations);
+
+    Ok(())
+}
+
 fn validate_hotkey_registrations(
     registrations: &[HotkeyRegistration],
 ) -> Result<(), WindowsBackendError> {
