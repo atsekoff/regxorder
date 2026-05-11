@@ -1058,12 +1058,17 @@ fn ensure_parent_directory_exists(path: &Path) -> Result<(), CliError> {
 mod tests {
     use std::path::{Path, PathBuf};
 
+    use clap::Parser;
+
     use super::{
-        HotkeyKeyArgument, HotkeyModifierArgument, average_events_per_second, format_binary_size,
-        format_stop_controls, hotkey_binding_from_arguments, resolve_session_input_path,
-        resolve_session_output_path, sample_recording,
+        Cli, CliError, Command, ControlCommandConfiguration, HotkeyKeyArgument,
+        HotkeyModifierArgument, RecordingStrategyArgument, average_events_per_second,
+        format_binary_size, format_stop_controls, hotkey_binding_from_arguments,
+        resolve_session_input_path, resolve_session_output_path, run_control_command,
+        sample_recording,
     };
     use regxorder_core::{HotkeyBinding, RecordingActionCounts, RecordingMetrics};
+    use regxorder_win32::WindowsBackendError;
 
     #[test]
     fn built_in_sample_recording_is_valid_and_ordered() {
@@ -1144,5 +1149,117 @@ mod tests {
             "Ctrl+Shift+F10 or Ctrl+C"
         );
         assert_eq!(format_stop_controls(None), "Ctrl+C");
+    }
+
+    #[test]
+    fn control_command_parser_accepts_record_and_play_hotkeys() {
+        let cli = Cli::try_parse_from([
+            "regxorder-cli",
+            "control",
+            "--record-output",
+            "demo.json",
+            "--start-record-hotkey",
+            "ctrl+shift+f11",
+            "--play-input",
+            "demo.json",
+            "--start-play-hotkey",
+            "ctrl+shift+f10",
+            "--stop-hotkey",
+            "ctrl+shift+f12",
+        ])
+        .expect("control command should parse");
+
+        match cli.command {
+            Command::Control {
+                record_output,
+                start_record_hotkey,
+                play_input,
+                start_play_hotkey,
+                stop_hotkey,
+                ..
+            } => {
+                assert_eq!(record_output, Some(PathBuf::from("demo.json")));
+                assert_eq!(play_input, Some(PathBuf::from("demo.json")));
+                assert_eq!(
+                    start_record_hotkey.map(|binding| binding.to_string()),
+                    Some(String::from("Ctrl+Shift+F11"))
+                );
+                assert_eq!(
+                    start_play_hotkey.map(|binding| binding.to_string()),
+                    Some(String::from("Ctrl+Shift+F10"))
+                );
+                assert_eq!(stop_hotkey.to_string(), "Ctrl+Shift+F12");
+            }
+            _ => panic!("expected the control command variant"),
+        }
+    }
+
+    #[test]
+    fn control_command_rejects_record_output_without_a_start_hotkey() {
+        let error = run_control_command(ControlCommandConfiguration {
+            record_output: Some(PathBuf::from("demo.json")),
+            record_title: None,
+            record_duration_seconds: None,
+            record_strategy: RecordingStrategyArgument::RawInput,
+            start_record_hotkey: None,
+            play_input: None,
+            play_speed: 1.0,
+            start_play_hotkey: None,
+            stop_hotkey: "ctrl+shift+f12"
+                .parse::<HotkeyBinding>()
+                .expect("stop hotkey should parse"),
+        })
+        .expect_err("control command should reject incomplete recording configuration");
+
+        assert!(matches!(
+            error,
+            CliError::InvalidControlRecordingConfiguration
+        ));
+    }
+
+    #[test]
+    fn control_command_rejects_play_input_without_a_start_hotkey() {
+        let error = run_control_command(ControlCommandConfiguration {
+            record_output: None,
+            record_title: None,
+            record_duration_seconds: None,
+            record_strategy: RecordingStrategyArgument::RawInput,
+            start_record_hotkey: None,
+            play_input: Some(PathBuf::from("demo.json")),
+            play_speed: 1.0,
+            start_play_hotkey: None,
+            stop_hotkey: "ctrl+shift+f12"
+                .parse::<HotkeyBinding>()
+                .expect("stop hotkey should parse"),
+        })
+        .expect_err("control command should reject incomplete playback configuration");
+
+        assert!(matches!(
+            error,
+            CliError::InvalidControlPlaybackConfiguration
+        ));
+    }
+
+    #[test]
+    fn control_command_requires_at_least_one_start_action_hotkey() {
+        let error = run_control_command(ControlCommandConfiguration {
+            record_output: None,
+            record_title: None,
+            record_duration_seconds: None,
+            record_strategy: RecordingStrategyArgument::RawInput,
+            start_record_hotkey: None,
+            play_input: None,
+            play_speed: 1.0,
+            start_play_hotkey: None,
+            stop_hotkey: "ctrl+shift+f12"
+                .parse::<HotkeyBinding>()
+                .expect("stop hotkey should parse"),
+        })
+        .expect_err("control command should require at least one control action");
+
+        assert!(matches!(
+            error,
+            CliError::WindowsBackend(WindowsBackendError::NoControlActionHotkeys)
+        ));
     }
 }
