@@ -38,7 +38,7 @@ For V1, deterministic replay means:
 1. Recorded events preserve strict ordering.
 2. Playback schedules events from recorded relative timestamps and the requested speed multiplier.
 3. Playback reports or logs timing drift where timing matters.
-4. Playback releases tracked pressed keys and buttons on abort or failure.
+4. Playback releases tracked pressed keys and buttons on completion, abort, cancellation, or failure.
 
 It does not mean:
 
@@ -192,7 +192,7 @@ Recommended model details:
 1. Use SendInput as the default player backend.
 2. Use a high-resolution monotonic timer and scheduler based on Windows timing primitives such as QueryPerformanceCounter.
 3. Apply speed scaling to relative timestamps, not to event order.
-4. Track pressed keys and buttons and release them on abort, cancellation, or unexpected failure.
+4. Track pressed keys and buttons and release them on completion, abort, cancellation, or unexpected failure.
 5. Capture expected versus actual dispatch timing for diagnostics.
 6. Surface explicit errors when elevation or integrity boundaries block playback.
 
@@ -202,6 +202,25 @@ Recommended model details:
 2. Keep hotkey behavior conservative and predictable.
 3. Avoid complex hook-based hotkey parsing unless RegisterHotKey proves insufficient.
 4. Make conflicts and registration failures visible to the user.
+
+### Session Boundary And Pressed-State Cleanup
+
+1. Treat hotkey chords as control-plane input rather than user input that should appear in saved recordings.
+2. For hotkeys that start recording or playback, trigger the action only after every key in the start chord has been released.
+3. Do not rely on stop-hotkey suppression alone as the correctness guarantee, because a recorder may legitimately observe some or all of the stop chord before the control path stops the session.
+4. Track pressed keyboard keys and mouse buttons centrally so recording finalization and playback cleanup can reconcile session state deterministically.
+5. When a recording ends, reconcile any still-pressed keys or buttons by appending balancing release events at the session boundary so the canonical recording ends in a fully released state.
+6. When playback ends, whether by normal completion, abort, cancellation, or failure, release all tracked pressed keys and buttons before returning control to the user.
+7. Add focused tests around start-hotkey release barriers, stop-hotkey boundaries, long-held modifiers, and recordings that would otherwise end with keys or buttons still pressed.
+
+### Prepared Playback Plans
+
+1. Keep the canonical recording unchanged when handling hotkey artifacts, ghost release events, or session-end cleanup requirements.
+2. Build a derived playback plan from the loaded recording and any future hotkey-control context rather than mutating the saved session text.
+3. Prefer doing semantic cleanup in a preflight preparation pass before timed playback starts so the runtime dispatch loop stays focused on scheduling accuracy.
+4. The preparation pass may ignore unmatched release events, append synthetic terminal releases for inputs still tracked as pressed at session end, and apply future hotkey-aware cleanup rules without rewriting the source recording.
+5. Repeated key-down events should be preserved by default in the prepared playback plan unless explicit control-plane metadata proves they are artifacts, because held keys can legitimately generate repeated logical key-down messages that applications observe.
+6. The runtime player should still track pressed state while dispatching the prepared plan so abort, failure, and partial-send cleanup remain deterministic.
 
 ### Import, Export, And Editing
 
@@ -265,6 +284,7 @@ Highest priority coverage:
 6. Cleanup behavior on abort and failure.
 7. Capability checks and backend selection.
 8. Error classification for malformed input and unsupported operations.
+9. Session-boundary cleanup and pressed-state reconciliation for recording, playback, and hotkey-driven workflows.
 
 Moderate priority coverage:
 
@@ -373,14 +393,14 @@ Deliverables:
 1. SendInput playback backend.
 2. High-resolution scheduler.
 3. Speed scaling.
-4. Abort and cleanup behavior.
+4. Completion, abort, and cleanup behavior.
 5. Drift metrics.
 
 Exit criteria:
 
 1. Playback preserves event order.
 2. Playback speed control behaves predictably.
-3. Aborts do not leave stuck key or button state behind.
+3. Completion and abort paths do not leave stuck key or button state behind.
 
 ### Phase 5 - CLI And Integration Hardening
 
@@ -438,7 +458,7 @@ Exit criteria:
 5. The SDK exposes the core workflows cleanly.
 6. The CLI exercises the SDK rather than bypassing it.
 7. The Slint UI covers the essential workflows without performance issues on normal recording sizes.
-8. Cleanup logic prevents stuck modifier or button state after abort.
+8. Cleanup logic prevents stuck modifier or button state after session end, abort, or failure.
 9. Elevated targets are supported when regxorder itself is elevated.
 10. Unsupported scenarios are documented clearly.
 
@@ -450,7 +470,7 @@ Exit criteria:
 | High-frequency mouse input | Event loss or jitter can compromise fidelity | Prefer Raw Input and test buffered handling under load |
 | Hook callback overhead | Slow callbacks can drop hooks or degrade input handling | Keep callbacks minimal and offload work immediately |
 | Coordinate portability | Exact coordinates are machine-specific | Store normalized coordinates and monitor metadata alongside exact values |
-| Stuck input state | Interrupted playback can leave keys or buttons pressed | Track pressed state centrally and release on abort or failure |
+| Stuck input state | Recording or playback can end with keys or buttons still pressed | Track pressed state centrally, reconcile recordings to a fully released terminal state, and release playback state on completion, abort, or failure |
 | Schema drift | External editing and API use will magnify breaking changes | Version the schema and add migration tests |
 | Overcoupled UI logic | Business rules may become duplicated or harder to test | Keep UI thin and route behavior through shared services |
 
