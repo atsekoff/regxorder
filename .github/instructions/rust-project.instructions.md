@@ -16,5 +16,6 @@ applyTo: "**/*.rs"
 - Add or update unit tests with behavior changes. Tests should document the behavior as clearly as the code does.
 - When adding public APIs, consider doctests or examples if they improve discoverability without duplicating existing tests.
 - Before committing Rust changes, run `cargo fmt --all` and stage the formatted result.
+- Before committing Rust changes, run `cargo clippy --workspace --all-targets -- -D warnings` and fix or justify any warnings before staging the final result.
 - If save-time or non-Rust formatters also rewrote staged files, restage those files before committing.
 - Keep the repository pre-commit hook and any Copilot commit guard logic aligned so both enforce the same commit-readiness checks.

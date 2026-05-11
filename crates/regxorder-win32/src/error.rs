@@ -6,6 +6,12 @@ pub enum WindowsBackendError {
     #[error(transparent)]
     Validation(#[from] regxorder_core::ValidationError),
 
+    #[error("at least one control start hotkey is required")]
+    NoControlActionHotkeys,
+
+    #[error("control hotkey `{binding}` was assigned to more than one action")]
+    DuplicateControlActionHotkey { binding: String },
+
     #[error("at least one hotkey registration is required")]
     NoHotkeyRegistrations,
 

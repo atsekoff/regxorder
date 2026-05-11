@@ -4,7 +4,7 @@ use std::{
     mem::size_of,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex, Weak,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -17,15 +17,14 @@ use regxorder_core::{
     ValidationError,
 };
 use regxorder_win32::{
-    HotkeyRegistration, HotkeyWaitOutcome, RecordingStrategy, StopHotkeyMonitor,
-    WindowsBackendError, play_recording, record_with_strategy, wait_for_hotkey_activation,
-    wait_for_hotkey_binding,
+    ControlAction, ControlBindings, ControlController, HotkeyRegistration, HotkeyWaitOutcome,
+    RecordingStrategy, WindowsBackendError, wait_for_hotkey_activation,
+    wait_for_hotkey_press_and_release,
 };
 use thiserror::Error;
 
 const HOTKEY_SMOKE_IDENTIFIER: i32 = 1;
 const START_ACTION_HOTKEY_IDENTIFIER: i32 = 1;
-const STOP_ACTION_HOTKEY_IDENTIFIER: i32 = 2;
 
 const SESSION_DIRECTORY_NAME: &str = "sessions";
 
@@ -109,6 +108,45 @@ enum Command {
         stop_hotkey: Option<HotkeyBinding>,
     },
 
+    /// Run a long-lived control loop that starts recording or playback from global hotkeys.
+    Control {
+        /// Path to write captured recordings when the record hotkey fires.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        record_output: Option<PathBuf>,
+
+        /// Optional title embedded in recordings captured by the control loop.
+        #[arg(long)]
+        record_title: Option<String>,
+
+        /// Optional duration limit applied to each control-loop recording action.
+        #[arg(long)]
+        record_duration_seconds: Option<f64>,
+
+        /// Recording strategy to use when the record hotkey fires.
+        #[arg(long, value_enum, default_value_t = RecordingStrategyArgument::RawInput)]
+        record_strategy: RecordingStrategyArgument,
+
+        /// Hotkey that starts a recording action inside the control loop.
+        #[arg(long, value_name = "HOTKEY")]
+        start_record_hotkey: Option<HotkeyBinding>,
+
+        /// Path to the recording file to play when the playback hotkey fires.
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        play_input: Option<PathBuf>,
+
+        /// Playback speed multiplier applied to control-loop playback actions.
+        #[arg(long, default_value_t = 1.0)]
+        play_speed: f64,
+
+        /// Hotkey that starts a playback action inside the control loop.
+        #[arg(long, value_name = "HOTKEY")]
+        start_play_hotkey: Option<HotkeyBinding>,
+
+        /// Hotkey that stops the active recording or playback action.
+        #[arg(long, value_name = "HOTKEY")]
+        stop_hotkey: HotkeyBinding,
+    },
+
     /// Register a global hotkey and print when it triggers.
     WatchHotkey {
         /// Modifier keys for the global hotkey.
@@ -133,6 +171,19 @@ enum Command {
 enum RecordingStrategyArgument {
     RawInput,
     LowLevelHooks,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ControlCommandConfiguration {
+    record_output: Option<PathBuf>,
+    record_title: Option<String>,
+    record_duration_seconds: Option<f64>,
+    record_strategy: RecordingStrategyArgument,
+    start_record_hotkey: Option<HotkeyBinding>,
+    play_input: Option<PathBuf>,
+    play_speed: f64,
+    start_play_hotkey: Option<HotkeyBinding>,
+    stop_hotkey: HotkeyBinding,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -216,6 +267,10 @@ pub enum CliError {
     CtrlC(#[from] ctrlc::Error),
     #[error("duration_seconds must be finite and greater than zero, found {0}")]
     InvalidDuration(f64),
+    #[error("control recording requires both --record-output and --start-record-hotkey")]
+    InvalidControlRecordingConfiguration,
+    #[error("control playback requires both --play-input and --start-play-hotkey")]
+    InvalidControlPlaybackConfiguration,
 }
 
 pub fn run(cli: Cli) -> Result<(), CliError> {
@@ -244,6 +299,27 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             start_hotkey,
             stop_hotkey,
         ),
+        Command::Control {
+            record_output,
+            record_title,
+            record_duration_seconds,
+            record_strategy,
+            start_record_hotkey,
+            play_input,
+            play_speed,
+            start_play_hotkey,
+            stop_hotkey,
+        } => run_control_command(ControlCommandConfiguration {
+            record_output,
+            record_title,
+            record_duration_seconds,
+            record_strategy,
+            start_record_hotkey,
+            play_input,
+            play_speed,
+            start_play_hotkey,
+            stop_hotkey,
+        }),
         Command::WatchHotkey {
             modifiers,
             key,
@@ -261,11 +337,7 @@ fn watch_hotkey(
 ) -> Result<(), CliError> {
     let timeout_seconds = validate_optional_duration(timeout_seconds)?;
     let stop_requested = Arc::new(AtomicBool::new(false));
-    let stop_handler = Arc::clone(&stop_requested);
-
-    ctrlc::set_handler(move || {
-        stop_handler.store(true, Ordering::SeqCst);
-    })?;
+    install_shutdown_handler(&stop_requested, None)?;
 
     arm_optional_duration_stop(timeout_seconds, &stop_requested);
 
@@ -318,12 +390,10 @@ fn record_recording_file(
     let duration_seconds = validate_optional_duration(duration_seconds)?;
     let resolved_output_path = resolve_session_output_path(output);
     let stop_requested = Arc::new(AtomicBool::new(false));
-    let stop_handler = Arc::clone(&stop_requested);
     let recording_strategy = strategy.into_backend_strategy();
+    let control_controller = ControlController;
 
-    ctrlc::set_handler(move || {
-        stop_handler.store(true, Ordering::SeqCst);
-    })?;
+    install_shutdown_handler(&stop_requested, None)?;
 
     if !wait_for_optional_start_hotkey("recording", start_hotkey.as_ref(), &stop_requested)? {
         return Ok(());
@@ -344,13 +414,13 @@ fn record_recording_file(
         );
     }
 
-    let stop_hotkey_listener =
-        spawn_optional_stop_hotkey_listener("recording", stop_hotkey.as_ref(), &stop_requested);
-    let recording_result = record_with_strategy(recording_strategy, stop_requested.as_ref(), title);
-    let stop_hotkey_result =
-        finish_optional_stop_hotkey_listener(&stop_requested, stop_hotkey_listener);
-    let recording = recording_result?;
-    stop_hotkey_result?;
+    let recording_outcome = control_controller.run_recording_action(
+        recording_strategy,
+        title,
+        stop_hotkey.as_ref(),
+        &stop_requested,
+    )?;
+    let recording = recording_outcome.recording;
 
     write_recording(&resolved_output_path, &recording)?;
 
@@ -360,6 +430,7 @@ fn record_recording_file(
         recording.duration().as_micros(),
         resolved_output_path.display()
     );
+    print_recording_finalization_summary(recording_outcome.finalization_report);
     print_recording_metrics(&recording, &resolved_output_path)?;
 
     Ok(())
@@ -375,11 +446,9 @@ fn play_recording_file(
     let recording = load_recording(&resolved_input_path)?;
     let speed = SpeedMultiplier::new(speed)?;
     let stop_requested = Arc::new(AtomicBool::new(false));
-    let stop_handler = Arc::clone(&stop_requested);
+    let control_controller = ControlController;
 
-    ctrlc::set_handler(move || {
-        stop_handler.store(true, Ordering::SeqCst);
-    })?;
+    install_shutdown_handler(&stop_requested, None)?;
 
     if !wait_for_optional_start_hotkey("playback", start_hotkey.as_ref(), &stop_requested)? {
         return Ok(());
@@ -395,13 +464,18 @@ fn play_recording_file(
         stop_controls
     );
 
-    let stop_hotkey_listener =
-        spawn_optional_stop_hotkey_listener("playback", stop_hotkey.as_ref(), &stop_requested);
-    let playback_result = play_recording(&recording, speed, stop_requested.as_ref());
-    let stop_hotkey_result =
-        finish_optional_stop_hotkey_listener(&stop_requested, stop_hotkey_listener);
-    let report = playback_result?;
-    stop_hotkey_result?;
+    let playback_outcome = control_controller.run_playback_action(
+        &recording,
+        speed,
+        stop_hotkey.as_ref(),
+        &stop_requested,
+    )?;
+    let report = playback_outcome.playback_report;
+
+    print_playback_preparation_summary(
+        playback_outcome.preparation_report,
+        playback_outcome.prepared_event_count,
+    );
 
     if report.interrupted {
         println!(
@@ -417,6 +491,113 @@ fn play_recording_file(
         );
     }
 
+    Ok(())
+}
+
+fn run_control_command(configuration: ControlCommandConfiguration) -> Result<(), CliError> {
+    let ControlCommandConfiguration {
+        record_output,
+        record_title,
+        record_duration_seconds,
+        record_strategy,
+        start_record_hotkey,
+        play_input,
+        play_speed,
+        start_play_hotkey,
+        stop_hotkey,
+    } = configuration;
+
+    let record_duration_seconds = validate_optional_duration(record_duration_seconds)?;
+    let recording_action = match (record_output, start_record_hotkey) {
+        (Some(output), Some(hotkey)) => Some((resolve_session_output_path(&output), hotkey)),
+        (None, None) => None,
+        _ => return Err(CliError::InvalidControlRecordingConfiguration),
+    };
+    let playback_action = match (play_input, start_play_hotkey) {
+        (Some(input), Some(hotkey)) => Some((
+            resolve_session_input_path(&input),
+            hotkey,
+            SpeedMultiplier::new(play_speed)?,
+        )),
+        (None, None) => None,
+        _ => return Err(CliError::InvalidControlPlaybackConfiguration),
+    };
+    let control_bindings = ControlBindings::new(
+        recording_action.as_ref().map(|(_, hotkey)| hotkey.clone()),
+        playback_action
+            .as_ref()
+            .map(|(_, hotkey, _)| hotkey.clone()),
+    )?;
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let current_action_stop_target = Arc::new(Mutex::new(None));
+    let control_controller = ControlController;
+
+    install_shutdown_handler(&shutdown_requested, Some(&current_action_stop_target))?;
+
+    if let Some((output, hotkey)) = &recording_action {
+        println!(
+            "control recording armed: {} -> {}",
+            hotkey,
+            output.display()
+        );
+    }
+
+    if let Some((input, hotkey, speed)) = &playback_action {
+        println!(
+            "control playback armed: {} -> {} at {}x",
+            hotkey,
+            input.display(),
+            speed.get()
+        );
+    }
+
+    println!("control stop hotkey armed: {}", stop_hotkey);
+    println!("press Ctrl+C to exit the control loop");
+
+    while let Some(control_action) =
+        control_controller.wait_for_next_action(&control_bindings, shutdown_requested.as_ref())?
+    {
+        match control_action {
+            ControlAction::Record => {
+                let Some((output, _)) = &recording_action else {
+                    continue;
+                };
+
+                if let Err(error) = run_control_recording_action(
+                    control_controller,
+                    output,
+                    record_title.clone(),
+                    record_duration_seconds,
+                    record_strategy.into_backend_strategy(),
+                    &stop_hotkey,
+                    &current_action_stop_target,
+                ) {
+                    eprintln!("control recording action failed: {error}");
+                }
+            }
+            ControlAction::Play => {
+                let Some((input, _, speed)) = &playback_action else {
+                    continue;
+                };
+
+                if let Err(error) = run_control_playback_action(
+                    control_controller,
+                    input,
+                    *speed,
+                    &stop_hotkey,
+                    &current_action_stop_target,
+                ) {
+                    eprintln!("control playback action failed: {error}");
+                }
+            }
+        }
+
+        if shutdown_requested.load(Ordering::SeqCst) {
+            break;
+        }
+    }
+
+    println!("control loop stopped");
     Ok(())
 }
 
@@ -572,6 +753,136 @@ fn arm_optional_duration_stop(duration_seconds: Option<f64>, stop_requested: &Ar
     }
 }
 
+fn install_shutdown_handler(
+    stop_requested: &Arc<AtomicBool>,
+    current_action_stop_target: Option<&Arc<Mutex<Option<Weak<AtomicBool>>>>>,
+) -> Result<(), CliError> {
+    let stop_requested = Arc::clone(stop_requested);
+    let current_action_stop_target = current_action_stop_target.cloned();
+
+    ctrlc::set_handler(move || {
+        stop_requested.store(true, Ordering::SeqCst);
+
+        let Some(current_action_stop_target) = &current_action_stop_target else {
+            return;
+        };
+
+        let Ok(current_action_stop_target) = current_action_stop_target.lock() else {
+            return;
+        };
+
+        let Some(current_action_stop_requested) =
+            current_action_stop_target.as_ref().and_then(Weak::upgrade)
+        else {
+            return;
+        };
+
+        current_action_stop_requested.store(true, Ordering::SeqCst);
+    })?;
+
+    Ok(())
+}
+
+fn set_current_action_stop_target(
+    current_action_stop_target: &Arc<Mutex<Option<Weak<AtomicBool>>>>,
+    stop_requested: Option<&Arc<AtomicBool>>,
+) {
+    if let Ok(mut current_action_stop_target) = current_action_stop_target.lock() {
+        *current_action_stop_target = stop_requested.map(Arc::downgrade);
+    }
+}
+
+fn run_control_recording_action(
+    control_controller: ControlController,
+    output: &Path,
+    title: Option<String>,
+    duration_seconds: Option<f64>,
+    strategy: RecordingStrategy,
+    stop_hotkey: &HotkeyBinding,
+    current_action_stop_target: &Arc<Mutex<Option<Weak<AtomicBool>>>>,
+) -> Result<(), CliError> {
+    let stop_requested = Arc::new(AtomicBool::new(false));
+
+    set_current_action_stop_target(current_action_stop_target, Some(&stop_requested));
+    arm_optional_duration_stop(duration_seconds, &stop_requested);
+
+    println!("control recording started; press {} to stop", stop_hotkey);
+
+    let recording_result = control_controller.run_recording_action(
+        strategy,
+        title,
+        Some(stop_hotkey),
+        &stop_requested,
+    );
+
+    set_current_action_stop_target(current_action_stop_target, None);
+
+    let recording_outcome = recording_result?;
+    write_recording(output, &recording_outcome.recording)?;
+
+    println!(
+        "control recording saved {} events over {} us to {}",
+        recording_outcome.recording.event_count(),
+        recording_outcome.recording.duration().as_micros(),
+        output.display()
+    );
+    print_recording_finalization_summary(recording_outcome.finalization_report);
+    print_recording_metrics(&recording_outcome.recording, output)?;
+
+    Ok(())
+}
+
+fn run_control_playback_action(
+    control_controller: ControlController,
+    input: &Path,
+    speed: SpeedMultiplier,
+    stop_hotkey: &HotkeyBinding,
+    current_action_stop_target: &Arc<Mutex<Option<Weak<AtomicBool>>>>,
+) -> Result<(), CliError> {
+    let recording = load_recording(input)?;
+    let stop_requested = Arc::new(AtomicBool::new(false));
+
+    set_current_action_stop_target(current_action_stop_target, Some(&stop_requested));
+
+    println!(
+        "control playback started from {} at {}x speed; press {} to stop",
+        input.display(),
+        speed.get(),
+        stop_hotkey
+    );
+
+    let playback_result = control_controller.run_playback_action(
+        &recording,
+        speed,
+        Some(stop_hotkey),
+        &stop_requested,
+    );
+
+    set_current_action_stop_target(current_action_stop_target, None);
+
+    let playback_outcome = playback_result?;
+    print_playback_preparation_summary(
+        playback_outcome.preparation_report,
+        playback_outcome.prepared_event_count,
+    );
+
+    if playback_outcome.playback_report.interrupted {
+        println!(
+            "control playback interrupted after {} events and {:.3} ms",
+            playback_outcome.playback_report.dispatched_events,
+            playback_outcome.playback_report.elapsed.as_secs_f64() * 1_000.0
+        );
+    } else {
+        println!(
+            "control playback completed: {} events in {:.3} ms",
+            playback_outcome.playback_report.dispatched_events,
+            playback_outcome.playback_report.elapsed.as_secs_f64() * 1_000.0
+        );
+    }
+
+    Ok(())
+}
+
 fn wait_for_optional_start_hotkey(
     action_name: &str,
     start_hotkey: Option<&HotkeyBinding>,
@@ -586,7 +897,7 @@ fn wait_for_optional_start_hotkey(
         action_name, start_hotkey
     );
 
-    match wait_for_hotkey_binding(
+    match wait_for_hotkey_press_and_release(
         start_hotkey,
         START_ACTION_HOTKEY_IDENTIFIER,
         stop_requested.as_ref(),
@@ -603,32 +914,6 @@ fn wait_for_optional_start_hotkey(
             Ok(false)
         }
     }
-}
-
-fn spawn_optional_stop_hotkey_listener(
-    action_name: &'static str,
-    stop_hotkey: Option<&HotkeyBinding>,
-    stop_requested: &Arc<AtomicBool>,
-) -> Option<StopHotkeyMonitor> {
-    let stop_hotkey = stop_hotkey?;
-    println!("{} stop hotkey armed: {}", action_name, stop_hotkey);
-    Some(StopHotkeyMonitor::spawn(
-        stop_hotkey,
-        STOP_ACTION_HOTKEY_IDENTIFIER,
-        stop_requested,
-    ))
-}
-
-fn finish_optional_stop_hotkey_listener(
-    stop_requested: &Arc<AtomicBool>,
-    stop_hotkey_listener: Option<StopHotkeyMonitor>,
-) -> Result<(), CliError> {
-    let Some(stop_hotkey_listener) = stop_hotkey_listener else {
-        return Ok(());
-    };
-
-    stop_hotkey_listener.finish(stop_requested)?;
-    Ok(())
 }
 
 fn hotkey_binding_from_arguments(
@@ -650,6 +935,34 @@ fn format_stop_controls(stop_hotkey: Option<&HotkeyBinding>) -> String {
     match stop_hotkey {
         Some(stop_hotkey) => format!("{} or Ctrl+C", stop_hotkey),
         None => String::from("Ctrl+C"),
+    }
+}
+
+fn print_recording_finalization_summary(
+    finalization_report: regxorder_core::RecordingFinalizationReport,
+) {
+    if finalization_report.appended_release_events > 0 {
+        println!(
+            "recording_finalization_appended_release_events: {}",
+            finalization_report.appended_release_events
+        );
+    }
+}
+
+fn print_playback_preparation_summary(
+    preparation_report: regxorder_core::PlaybackPreparationReport,
+    prepared_event_count: usize,
+) {
+    println!("prepared_playback_events: {}", prepared_event_count);
+
+    if preparation_report.skipped_unmatched_release_events > 0
+        || preparation_report.appended_release_events > 0
+    {
+        println!(
+            "prepared_playback_cleanup: skipped_unmatched_release_events={} appended_release_events={}",
+            preparation_report.skipped_unmatched_release_events,
+            preparation_report.appended_release_events
+        );
     }
 }
 

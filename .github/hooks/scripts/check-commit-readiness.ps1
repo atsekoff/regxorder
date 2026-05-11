@@ -1,16 +1,6 @@
 $workspaceRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..\..')
 $cargoManifest = Join-Path $workspaceRoot 'Cargo.toml'
 
-function Fail-CommitReadinessCheck {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Message
-    )
-
-    Write-Output $Message
-    exit 1
-}
-
 if (-not (Test-Path $cargoManifest)) {
     exit 0
 }
@@ -23,7 +13,8 @@ try {
         }
     )
     if ($LASTEXITCODE -ne 0) {
-        Fail-CommitReadinessCheck -Message 'Unable to inspect staged files before commit.'
+        Write-Output 'Unable to inspect staged files before commit.'
+        exit 1
     }
 
     $unstagedPaths = @(
@@ -32,7 +23,8 @@ try {
         }
     )
     if ($LASTEXITCODE -ne 0) {
-        Fail-CommitReadinessCheck -Message 'Unable to inspect unstaged files before commit.'
+        Write-Output 'Unable to inspect unstaged files before commit.'
+        exit 1
     }
 
     $stagedPathLookup = [System.Collections.Generic.HashSet[string]]::new(
@@ -49,17 +41,26 @@ try {
     )
     if ($pathsNeedingRestage.Count -gt 0) {
         $pathList = ($pathsNeedingRestage | Sort-Object | Select-Object -First 5) -join ', '
-        Fail-CommitReadinessCheck -Message "Some staged files also have unstaged changes. Save, format, and restage every changed file before committing. Examples: $pathList"
+        Write-Output "Some staged files also have unstaged changes. Save, format, and restage every changed file before committing. Examples: $pathList"
+        exit 1
     }
 
     git diff --cached --check | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Fail-CommitReadinessCheck -Message 'Staged files still contain whitespace or newline problems. Apply the appropriate formatter, restage the files, and then commit.'
+        Write-Output 'Staged files still contain whitespace or newline problems. Apply the appropriate formatter, restage the files, and then commit.'
+        exit 1
     }
 
     cargo fmt --all --check | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Fail-CommitReadinessCheck -Message 'Rust files are not formatted. Run cargo fmt --all, restage every affected file, and then commit.'
+        Write-Output 'Rust files are not formatted. Run cargo fmt --all, restage every affected file, and then commit.'
+        exit 1
+    }
+
+    cargo clippy --workspace --all-targets -- -D warnings | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Output 'Rust lint checks failed. Run cargo clippy --workspace --all-targets -- -D warnings, fix the reported issues, restage every affected file, and then commit.'
+        exit 1
     }
 }
 finally {

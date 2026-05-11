@@ -26,6 +26,7 @@
 
 - Before any commit, run the appropriate formatters for every changed file and stage the formatted result.
 - For Rust code, the baseline formatting command is `cargo fmt --all`.
+- For Rust code, the baseline lint command is `cargo clippy --workspace --all-targets -- -D warnings`.
 - Do not commit while a staged file also has unstaged save-time or formatter changes. Restage every affected file first.
 - Keep the repository pre-commit hook and the Copilot `PreToolUse` hook aligned so direct `git commit` calls and agent-driven commits enforce the same readiness checks.
 - Enable the versioned git hooks with `git config core.hooksPath .githooks` in local clones.

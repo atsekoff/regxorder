@@ -5,6 +5,7 @@ mod event;
 mod format;
 mod hotkey;
 mod recording;
+mod session;
 
 pub use error::{RecordingError, ValidationError};
 pub use event::{
@@ -15,6 +16,10 @@ pub use event::{
 pub use format::{from_json_str, to_json_pretty, write_json_pretty};
 pub use hotkey::{HotkeyBinding, HotkeyKey, HotkeyModifier, HotkeyParseError};
 pub use recording::{Recording, RecordingActionCounts, RecordingMetadata, RecordingMetrics};
+pub use session::{
+    PlaybackPreparationReport, PreparedPlaybackPlan, RecordingFinalizationReport,
+    finalize_recording_session, prepare_playback_plan,
+};
 
 /// The canonical schema version used for regxorder interchange data.
 pub const CURRENT_SCHEMA_VERSION: SchemaVersion = SchemaVersion::new(1);

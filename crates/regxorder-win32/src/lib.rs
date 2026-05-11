@@ -1,13 +1,21 @@
 //! Windows-specific recording, playback, and hotkey backends for regxorder.
 
+mod controller;
 mod error;
 mod hotkey_service;
 mod hotkeys;
 mod playback;
 mod recording;
 
+pub use controller::{
+    ControlAction, ControlBindings, ControlController, PlaybackActionOutcome,
+    RecordingActionOutcome,
+};
 pub use error::WindowsBackendError;
-pub use hotkey_service::{HotkeyWaitOutcome, StopHotkeyMonitor, wait_for_hotkey_binding};
+pub use hotkey_service::{
+    HotkeyWaitOutcome, StopHotkeyMonitor, wait_for_hotkey_binding,
+    wait_for_hotkey_press_and_release, wait_for_hotkey_release,
+};
 pub use hotkeys::{
     HotkeyActivation, HotkeyModifiers, HotkeyRegistration, wait_for_hotkey_activation,
 };

@@ -80,6 +80,10 @@ impl Recording {
         &self.events
     }
 
+    pub(crate) fn into_parts(self) -> (RecordingMetadata, Vec<InputEvent>) {
+        (self.metadata, self.events)
+    }
+
     /// Returns the number of ordered events stored in the recording.
     pub fn event_count(&self) -> usize {
         self.events.len()
