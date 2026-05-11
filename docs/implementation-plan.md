@@ -202,6 +202,7 @@ Recommended model details:
 2. Keep hotkey behavior conservative and predictable.
 3. Avoid complex hook-based hotkey parsing unless RegisterHotKey proves insufficient.
 4. Make conflicts and registration failures visible to the user.
+5. Keep hotkey chord parsing and action-boundary orchestration in shared services so the CLI and future UI reuse the same behavior instead of duplicating it.
 
 ### Session Boundary And Pressed-State Cleanup
 

@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use regxorder_core::{HotkeyBinding, HotkeyKey, HotkeyModifier};
 use windows_sys::Win32::{
     Foundation::HWND,
     System::Threading::GetCurrentThreadId,
@@ -123,6 +124,21 @@ impl HotkeyRegistration {
         self.suppress_auto_repeat
     }
 
+    /// Creates a Windows hotkey registration from the shared hotkey binding model.
+    pub fn from_binding(identifier: i32, binding: &HotkeyBinding) -> Self {
+        Self::new(
+            identifier,
+            binding
+                .modifiers()
+                .iter()
+                .copied()
+                .fold(HotkeyModifiers::empty(), |combined, modifier| {
+                    combined | hotkey_modifier_flags(modifier)
+                }),
+            hotkey_virtual_key_code(binding.key()),
+        )
+    }
+
     fn registration_flags(self) -> u32 {
         self.modifiers.bits()
             | if self.suppress_auto_repeat {
@@ -139,6 +155,33 @@ impl HotkeyRegistration {
             self.virtual_key_code,
             self.suppress_auto_repeat
         )
+    }
+}
+
+const fn hotkey_modifier_flags(modifier: HotkeyModifier) -> HotkeyModifiers {
+    match modifier {
+        HotkeyModifier::Control => HotkeyModifiers::control(),
+        HotkeyModifier::Alt => HotkeyModifiers::alt(),
+        HotkeyModifier::Shift => HotkeyModifiers::shift(),
+        HotkeyModifier::Win => HotkeyModifiers::win(),
+    }
+}
+
+const fn hotkey_virtual_key_code(key: HotkeyKey) -> u32 {
+    match key {
+        HotkeyKey::Escape => 0x1B,
+        HotkeyKey::F1 => 0x70,
+        HotkeyKey::F2 => 0x71,
+        HotkeyKey::F3 => 0x72,
+        HotkeyKey::F4 => 0x73,
+        HotkeyKey::F5 => 0x74,
+        HotkeyKey::F6 => 0x75,
+        HotkeyKey::F7 => 0x76,
+        HotkeyKey::F8 => 0x77,
+        HotkeyKey::F9 => 0x78,
+        HotkeyKey::F10 => 0x79,
+        HotkeyKey::F11 => 0x7A,
+        HotkeyKey::F12 => 0x7B,
     }
 }
 
@@ -352,6 +395,7 @@ fn post_hotkey_stop_message(thread_id: u32) -> Result<(), WindowsBackendError> {
 mod tests {
     use std::sync::atomic::AtomicBool;
 
+    use regxorder_core::HotkeyBinding;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_SHIFT};
 
     use super::{HotkeyModifiers, HotkeyRegistration, wait_for_hotkey_activation};
@@ -389,5 +433,21 @@ mod tests {
             error,
             WindowsBackendError::DuplicateHotkeyIdentifier { identifier: 1 }
         ));
+    }
+
+    #[test]
+    fn hotkey_registration_maps_shared_bindings_into_windows_values() {
+        let binding = "ctrl+shift+f9"
+            .parse::<HotkeyBinding>()
+            .expect("hotkey bindings should parse");
+        let registration = HotkeyRegistration::from_binding(7, &binding);
+
+        assert_eq!(registration.identifier(), 7);
+        assert_eq!(
+            registration.modifiers(),
+            HotkeyModifiers::control() | HotkeyModifiers::shift()
+        );
+        assert_eq!(registration.virtual_key_code(), 0x78);
+        assert!(registration.suppresses_auto_repeat());
     }
 }

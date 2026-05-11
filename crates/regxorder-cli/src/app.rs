@@ -1,10 +1,8 @@
 use std::{
-    fmt,
     fs::{self, File},
     io::{BufWriter, Write},
     mem::size_of,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -13,13 +11,15 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use regxorder_core::{
-    AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, InputAction, InputEvent, KeyDescriptor,
-    Recording, RecordingError, RecordingMetadata, RecordingMetrics, ScanCode, SchemaVersion,
-    ScreenSize, SpeedMultiplier, ValidationError,
+    AbsoluteScreenPoint, DisplayMetadata, ElapsedTime, HotkeyBinding, HotkeyKey, HotkeyModifier,
+    HotkeyParseError, InputAction, InputEvent, KeyDescriptor, Recording, RecordingError,
+    RecordingMetadata, RecordingMetrics, ScanCode, SchemaVersion, ScreenSize, SpeedMultiplier,
+    ValidationError,
 };
 use regxorder_win32::{
-    HotkeyModifiers, HotkeyRegistration, RecordingStrategy, WindowsBackendError, play_recording,
-    record_with_strategy, wait_for_hotkey_activation,
+    HotkeyRegistration, HotkeyWaitOutcome, RecordingStrategy, StopHotkeyMonitor,
+    WindowsBackendError, play_recording, record_with_strategy, wait_for_hotkey_activation,
+    wait_for_hotkey_binding,
 };
 use thiserror::Error;
 
@@ -75,11 +75,11 @@ enum Command {
 
         /// Optional hotkey that must be pressed before playback starts, for example ctrl+shift+f9.
         #[arg(long, value_name = "HOTKEY")]
-        start_hotkey: Option<HotkeyBindingArgument>,
+        start_hotkey: Option<HotkeyBinding>,
 
         /// Optional hotkey that stops playback early, for example ctrl+shift+f10.
         #[arg(long, value_name = "HOTKEY")]
-        stop_hotkey: Option<HotkeyBindingArgument>,
+        stop_hotkey: Option<HotkeyBinding>,
     },
 
     /// Record keyboard and mouse input using the selected Windows recording strategy.
@@ -102,11 +102,11 @@ enum Command {
 
         /// Optional hotkey that must be pressed before recording starts, for example ctrl+shift+f9.
         #[arg(long, value_name = "HOTKEY")]
-        start_hotkey: Option<HotkeyBindingArgument>,
+        start_hotkey: Option<HotkeyBinding>,
 
         /// Optional hotkey that stops recording, for example ctrl+shift+f10.
         #[arg(long, value_name = "HOTKEY")]
-        stop_hotkey: Option<HotkeyBindingArgument>,
+        stop_hotkey: Option<HotkeyBinding>,
     },
 
     /// Register a global hotkey and print when it triggers.
@@ -144,35 +144,12 @@ enum HotkeyModifierArgument {
 }
 
 impl HotkeyModifierArgument {
-    const fn into_hotkey_modifier(self) -> HotkeyModifiers {
+    const fn into_hotkey_modifier(self) -> HotkeyModifier {
         match self {
-            Self::Control => HotkeyModifiers::control(),
-            Self::Alt => HotkeyModifiers::alt(),
-            Self::Shift => HotkeyModifiers::shift(),
-            Self::Win => HotkeyModifiers::win(),
-        }
-    }
-
-    const fn display_name(self) -> &'static str {
-        match self {
-            Self::Control => "Ctrl",
-            Self::Alt => "Alt",
-            Self::Shift => "Shift",
-            Self::Win => "Win",
-        }
-    }
-
-    fn parse_token(token: &str) -> Option<Self> {
-        if token.eq_ignore_ascii_case("ctrl") || token.eq_ignore_ascii_case("control") {
-            Some(Self::Control)
-        } else if token.eq_ignore_ascii_case("alt") {
-            Some(Self::Alt)
-        } else if token.eq_ignore_ascii_case("shift") {
-            Some(Self::Shift)
-        } else if token.eq_ignore_ascii_case("win") || token.eq_ignore_ascii_case("windows") {
-            Some(Self::Win)
-        } else {
-            None
+            Self::Control => HotkeyModifier::Control,
+            Self::Alt => HotkeyModifier::Alt,
+            Self::Shift => HotkeyModifier::Shift,
+            Self::Win => HotkeyModifier::Win,
         }
     }
 }
@@ -195,145 +172,22 @@ enum HotkeyKeyArgument {
 }
 
 impl HotkeyKeyArgument {
-    const fn virtual_key_code(self) -> u32 {
+    const fn into_hotkey_key(self) -> HotkeyKey {
         match self {
-            Self::Escape => 0x1B,
-            Self::F1 => 0x70,
-            Self::F2 => 0x71,
-            Self::F3 => 0x72,
-            Self::F4 => 0x73,
-            Self::F5 => 0x74,
-            Self::F6 => 0x75,
-            Self::F7 => 0x76,
-            Self::F8 => 0x77,
-            Self::F9 => 0x78,
-            Self::F10 => 0x79,
-            Self::F11 => 0x7A,
-            Self::F12 => 0x7B,
+            Self::Escape => HotkeyKey::Escape,
+            Self::F1 => HotkeyKey::F1,
+            Self::F2 => HotkeyKey::F2,
+            Self::F3 => HotkeyKey::F3,
+            Self::F4 => HotkeyKey::F4,
+            Self::F5 => HotkeyKey::F5,
+            Self::F6 => HotkeyKey::F6,
+            Self::F7 => HotkeyKey::F7,
+            Self::F8 => HotkeyKey::F8,
+            Self::F9 => HotkeyKey::F9,
+            Self::F10 => HotkeyKey::F10,
+            Self::F11 => HotkeyKey::F11,
+            Self::F12 => HotkeyKey::F12,
         }
-    }
-
-    const fn display_name(self) -> &'static str {
-        match self {
-            Self::Escape => "Escape",
-            Self::F1 => "F1",
-            Self::F2 => "F2",
-            Self::F3 => "F3",
-            Self::F4 => "F4",
-            Self::F5 => "F5",
-            Self::F6 => "F6",
-            Self::F7 => "F7",
-            Self::F8 => "F8",
-            Self::F9 => "F9",
-            Self::F10 => "F10",
-            Self::F11 => "F11",
-            Self::F12 => "F12",
-        }
-    }
-
-    fn parse_token(token: &str) -> Option<Self> {
-        if token.eq_ignore_ascii_case("esc") || token.eq_ignore_ascii_case("escape") {
-            Some(Self::Escape)
-        } else if token.eq_ignore_ascii_case("f1") {
-            Some(Self::F1)
-        } else if token.eq_ignore_ascii_case("f2") {
-            Some(Self::F2)
-        } else if token.eq_ignore_ascii_case("f3") {
-            Some(Self::F3)
-        } else if token.eq_ignore_ascii_case("f4") {
-            Some(Self::F4)
-        } else if token.eq_ignore_ascii_case("f5") {
-            Some(Self::F5)
-        } else if token.eq_ignore_ascii_case("f6") {
-            Some(Self::F6)
-        } else if token.eq_ignore_ascii_case("f7") {
-            Some(Self::F7)
-        } else if token.eq_ignore_ascii_case("f8") {
-            Some(Self::F8)
-        } else if token.eq_ignore_ascii_case("f9") {
-            Some(Self::F9)
-        } else if token.eq_ignore_ascii_case("f10") {
-            Some(Self::F10)
-        } else if token.eq_ignore_ascii_case("f11") {
-            Some(Self::F11)
-        } else if token.eq_ignore_ascii_case("f12") {
-            Some(Self::F12)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct HotkeyBindingArgument {
-    modifiers: Vec<HotkeyModifierArgument>,
-    key: HotkeyKeyArgument,
-}
-
-impl HotkeyBindingArgument {
-    fn registration(&self, identifier: i32) -> HotkeyRegistration {
-        HotkeyRegistration::new(
-            identifier,
-            combine_hotkey_modifiers(&self.modifiers),
-            self.key.virtual_key_code(),
-        )
-    }
-}
-
-impl fmt::Display for HotkeyBindingArgument {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&format_hotkey_label(&self.modifiers, self.key))
-    }
-}
-
-impl FromStr for HotkeyBindingArgument {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let mut modifiers = Vec::new();
-        let mut key = None;
-
-        for token in value.split('+').map(str::trim) {
-            if token.is_empty() {
-                return Err(String::from("hotkeys cannot contain empty segments"));
-            }
-
-            if let Some(modifier) = HotkeyModifierArgument::parse_token(token) {
-                if modifiers.contains(&modifier) {
-                    return Err(format!(
-                        "hotkey modifier `{token}` was provided more than once"
-                    ));
-                }
-
-                modifiers.push(modifier);
-                continue;
-            }
-
-            if let Some(parsed_key) = HotkeyKeyArgument::parse_token(token) {
-                if key.replace(parsed_key).is_some() {
-                    return Err(String::from(
-                        "hotkeys can only contain one base key such as escape or f1-f12",
-                    ));
-                }
-
-                continue;
-            }
-
-            return Err(format!(
-                "unsupported hotkey token `{token}`; use modifiers like ctrl/alt/shift/win and keys like escape or f1-f12"
-            ));
-        }
-
-        if modifiers.is_empty() {
-            return Err(String::from(
-                "hotkeys require at least one modifier such as ctrl, alt, shift, or win",
-            ));
-        }
-
-        let key =
-            key.ok_or_else(|| String::from("hotkeys require a base key such as escape or f1-f12"))?;
-
-        Ok(Self { modifiers, key })
     }
 }
 
@@ -356,12 +210,12 @@ pub enum CliError {
     Validation(#[from] ValidationError),
     #[error(transparent)]
     WindowsBackend(#[from] WindowsBackendError),
+    #[error(transparent)]
+    HotkeyParse(#[from] HotkeyParseError),
     #[error("failed to install Ctrl+C handler: {0}")]
     CtrlC(#[from] ctrlc::Error),
     #[error("duration_seconds must be finite and greater than zero, found {0}")]
     InvalidDuration(f64),
-    #[error("at least one hotkey modifier must be provided for a global hotkey")]
-    HotkeyRequiresModifier,
 }
 
 pub fn run(cli: Cli) -> Result<(), CliError> {
@@ -415,18 +269,15 @@ fn watch_hotkey(
 
     arm_optional_duration_stop(timeout_seconds, &stop_requested);
 
-    let hotkey_modifiers = build_hotkey_modifiers(modifiers)?;
-    let hotkey_registration = HotkeyRegistration::new(
-        HOTKEY_SMOKE_IDENTIFIER,
-        hotkey_modifiers,
-        key.virtual_key_code(),
-    );
+    let hotkey_binding = hotkey_binding_from_arguments(modifiers, key)?;
+    let hotkey_registration =
+        HotkeyRegistration::from_binding(HOTKEY_SMOKE_IDENTIFIER, &hotkey_binding);
     let hotkey_registration = if allow_auto_repeat {
         hotkey_registration.with_auto_repeat_enabled()
     } else {
         hotkey_registration
     };
-    let hotkey_label = format_hotkey_label(modifiers, key);
+    let hotkey_label = hotkey_binding.to_string();
 
     if let Some(seconds) = timeout_seconds {
         println!(
@@ -461,8 +312,8 @@ fn record_recording_file(
     title: Option<String>,
     duration_seconds: Option<f64>,
     strategy: RecordingStrategyArgument,
-    start_hotkey: Option<HotkeyBindingArgument>,
-    stop_hotkey: Option<HotkeyBindingArgument>,
+    start_hotkey: Option<HotkeyBinding>,
+    stop_hotkey: Option<HotkeyBinding>,
 ) -> Result<(), CliError> {
     let duration_seconds = validate_optional_duration(duration_seconds)?;
     let resolved_output_path = resolve_session_output_path(output);
@@ -517,8 +368,8 @@ fn record_recording_file(
 fn play_recording_file(
     path: &Path,
     speed: f64,
-    start_hotkey: Option<HotkeyBindingArgument>,
-    stop_hotkey: Option<HotkeyBindingArgument>,
+    start_hotkey: Option<HotkeyBinding>,
+    stop_hotkey: Option<HotkeyBinding>,
 ) -> Result<(), CliError> {
     let resolved_input_path = resolve_session_input_path(path);
     let recording = load_recording(&resolved_input_path)?;
@@ -723,7 +574,7 @@ fn arm_optional_duration_stop(duration_seconds: Option<f64>, stop_requested: &Ar
 
 fn wait_for_optional_start_hotkey(
     action_name: &str,
-    start_hotkey: Option<&HotkeyBindingArgument>,
+    start_hotkey: Option<&HotkeyBinding>,
     stop_requested: &Arc<AtomicBool>,
 ) -> Result<bool, CliError> {
     let Some(start_hotkey) = start_hotkey else {
@@ -735,15 +586,16 @@ fn wait_for_optional_start_hotkey(
         action_name, start_hotkey
     );
 
-    match wait_for_hotkey_activation(
-        &[start_hotkey.registration(START_ACTION_HOTKEY_IDENTIFIER)],
+    match wait_for_hotkey_binding(
+        start_hotkey,
+        START_ACTION_HOTKEY_IDENTIFIER,
         stop_requested.as_ref(),
     )? {
-        Some(_) => {
+        HotkeyWaitOutcome::Activated => {
             println!("{} start hotkey triggered: {}", action_name, start_hotkey);
             Ok(true)
         }
-        None => {
+        HotkeyWaitOutcome::Cancelled => {
             println!(
                 "{} start was cancelled before the hotkey fired",
                 action_name
@@ -755,77 +607,50 @@ fn wait_for_optional_start_hotkey(
 
 fn spawn_optional_stop_hotkey_listener(
     action_name: &'static str,
-    stop_hotkey: Option<&HotkeyBindingArgument>,
+    stop_hotkey: Option<&HotkeyBinding>,
     stop_requested: &Arc<AtomicBool>,
-) -> Option<std::thread::JoinHandle<Result<(), WindowsBackendError>>> {
-    let stop_hotkey = stop_hotkey.cloned()?;
-    let stop_requested = Arc::clone(stop_requested);
-
-    Some(std::thread::spawn(move || {
-        if wait_for_hotkey_activation(
-            &[stop_hotkey.registration(STOP_ACTION_HOTKEY_IDENTIFIER)],
-            stop_requested.as_ref(),
-        )?
-        .is_some()
-        {
-            println!("{} stop hotkey triggered: {}", action_name, stop_hotkey);
-            stop_requested.store(true, Ordering::SeqCst);
-        }
-
-        Ok(())
-    }))
+) -> Option<StopHotkeyMonitor> {
+    let stop_hotkey = stop_hotkey?;
+    println!("{} stop hotkey armed: {}", action_name, stop_hotkey);
+    Some(StopHotkeyMonitor::spawn(
+        stop_hotkey,
+        STOP_ACTION_HOTKEY_IDENTIFIER,
+        stop_requested,
+    ))
 }
 
 fn finish_optional_stop_hotkey_listener(
     stop_requested: &Arc<AtomicBool>,
-    stop_hotkey_listener: Option<std::thread::JoinHandle<Result<(), WindowsBackendError>>>,
+    stop_hotkey_listener: Option<StopHotkeyMonitor>,
 ) -> Result<(), CliError> {
-    stop_requested.store(true, Ordering::SeqCst);
-
     let Some(stop_hotkey_listener) = stop_hotkey_listener else {
         return Ok(());
     };
 
-    match stop_hotkey_listener.join() {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(error)) => Err(error.into()),
-        Err(_) => Err(WindowsBackendError::ThreadPanic.into()),
-    }
+    stop_hotkey_listener.finish(stop_requested)?;
+    Ok(())
 }
 
-fn format_stop_controls(stop_hotkey: Option<&HotkeyBindingArgument>) -> String {
+fn hotkey_binding_from_arguments(
+    modifiers: &[HotkeyModifierArgument],
+    key: HotkeyKeyArgument,
+) -> Result<HotkeyBinding, CliError> {
+    HotkeyBinding::new(
+        modifiers
+            .iter()
+            .copied()
+            .map(HotkeyModifierArgument::into_hotkey_modifier)
+            .collect(),
+        key.into_hotkey_key(),
+    )
+    .map_err(CliError::from)
+}
+
+fn format_stop_controls(stop_hotkey: Option<&HotkeyBinding>) -> String {
     match stop_hotkey {
         Some(stop_hotkey) => format!("{} or Ctrl+C", stop_hotkey),
         None => String::from("Ctrl+C"),
     }
-}
-
-fn combine_hotkey_modifiers(modifiers: &[HotkeyModifierArgument]) -> HotkeyModifiers {
-    modifiers
-        .iter()
-        .copied()
-        .fold(HotkeyModifiers::empty(), |combined, modifier| {
-            combined | modifier.into_hotkey_modifier()
-        })
-}
-
-fn build_hotkey_modifiers(
-    modifiers: &[HotkeyModifierArgument],
-) -> Result<HotkeyModifiers, CliError> {
-    if modifiers.is_empty() {
-        return Err(CliError::HotkeyRequiresModifier);
-    }
-
-    Ok(combine_hotkey_modifiers(modifiers))
-}
-
-fn format_hotkey_label(modifiers: &[HotkeyModifierArgument], key: HotkeyKeyArgument) -> String {
-    let mut parts: Vec<&'static str> = modifiers
-        .iter()
-        .map(|modifier| modifier.display_name())
-        .collect();
-    parts.push(key.display_name());
-    parts.join("+")
 }
 
 fn format_binary_size(bytes: u64) -> String {
@@ -921,13 +746,11 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        HotkeyBindingArgument, HotkeyKeyArgument, HotkeyModifierArgument,
-        average_events_per_second, build_hotkey_modifiers, format_binary_size, format_hotkey_label,
-        format_stop_controls, resolve_session_input_path, resolve_session_output_path,
-        sample_recording,
+        HotkeyKeyArgument, HotkeyModifierArgument, average_events_per_second, format_binary_size,
+        format_stop_controls, hotkey_binding_from_arguments, resolve_session_input_path,
+        resolve_session_output_path, sample_recording,
     };
-    use regxorder_core::{RecordingActionCounts, RecordingMetrics};
-    use regxorder_win32::HotkeyModifiers;
+    use regxorder_core::{HotkeyBinding, RecordingActionCounts, RecordingMetrics};
 
     #[test]
     fn built_in_sample_recording_is_valid_and_ordered() {
@@ -984,72 +807,23 @@ mod tests {
     }
 
     #[test]
-    fn hotkey_modifier_lists_build_windows_modifier_masks() {
-        let modifiers = build_hotkey_modifiers(&[
-            HotkeyModifierArgument::Control,
-            HotkeyModifierArgument::Shift,
-        ])
-        .expect("hotkey modifiers should build");
-
-        assert_eq!(
-            modifiers,
-            HotkeyModifiers::control() | HotkeyModifiers::shift()
-        );
-    }
-
-    #[test]
-    fn hotkey_labels_render_modifier_and_key_names() {
-        let label = format_hotkey_label(
-            &[HotkeyModifierArgument::Control, HotkeyModifierArgument::Alt],
+    fn watch_hotkey_arguments_build_shared_hotkey_bindings() {
+        let binding = hotkey_binding_from_arguments(
+            &[
+                HotkeyModifierArgument::Control,
+                HotkeyModifierArgument::Shift,
+            ],
             HotkeyKeyArgument::F9,
-        );
+        )
+        .expect("watch hotkey arguments should build");
 
-        assert_eq!(label, "Ctrl+Alt+F9");
-    }
-
-    #[test]
-    fn hotkey_bindings_parse_case_insensitive_chords() {
-        let hotkey = "ctrl+shift+f9"
-            .parse::<HotkeyBindingArgument>()
-            .expect("hotkey bindings should parse");
-
-        assert_eq!(hotkey.to_string(), "Ctrl+Shift+F9");
-    }
-
-    #[test]
-    fn hotkey_bindings_accept_escape_aliases() {
-        let hotkey = "control+alt+esc"
-            .parse::<HotkeyBindingArgument>()
-            .expect("hotkey bindings should parse escape aliases");
-
-        assert_eq!(hotkey.to_string(), "Ctrl+Alt+Escape");
-    }
-
-    #[test]
-    fn hotkey_bindings_require_a_modifier() {
-        let error = "f9"
-            .parse::<HotkeyBindingArgument>()
-            .expect_err("hotkey bindings should reject missing modifiers");
-
-        assert_eq!(
-            error,
-            "hotkeys require at least one modifier such as ctrl, alt, shift, or win"
-        );
-    }
-
-    #[test]
-    fn hotkey_bindings_reject_duplicate_modifiers() {
-        let error = "ctrl+ctrl+f9"
-            .parse::<HotkeyBindingArgument>()
-            .expect_err("hotkey bindings should reject duplicate modifiers");
-
-        assert_eq!(error, "hotkey modifier `ctrl` was provided more than once");
+        assert_eq!(binding.to_string(), "Ctrl+Shift+F9");
     }
 
     #[test]
     fn stop_controls_include_optional_hotkey_labels() {
         let stop_hotkey = "ctrl+shift+f10"
-            .parse::<HotkeyBindingArgument>()
+            .parse::<HotkeyBinding>()
             .expect("stop hotkeys should parse");
 
         assert_eq!(
