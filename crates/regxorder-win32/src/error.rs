@@ -18,6 +18,11 @@ pub enum WindowsBackendError {
     #[error("hotkey identifier {identifier} was registered more than once")]
     DuplicateHotkeyIdentifier { identifier: i32 },
 
+    #[error(
+        "{operation} may require an elevated regxorder process when targeting an elevated window; rerun with --elevate or start regxorder as administrator"
+    )]
+    ElevationRequired { operation: &'static str },
+
     #[error("playback was interrupted")]
     Interrupted,
 

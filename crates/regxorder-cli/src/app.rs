@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsString,
     fs::{self, File},
     io::{BufWriter, Write},
     mem::size_of,
@@ -21,6 +22,7 @@ use regxorder_core::{
 use regxorder_win32::{
     ControlAction, ControlBindings, ControlController, HotkeyRegistration, HotkeyWaitOutcome,
     RecordingStrategy, WindowsBackendError, diagnose_windows_environment,
+    ensure_current_process_is_elevated, relaunch_process_elevated_and_wait,
     wait_for_hotkey_activation, wait_for_hotkey_press_and_release,
 };
 use serde::Serialize;
@@ -82,6 +84,10 @@ enum Command {
         /// Optional hotkey that stops playback early, for example ctrl+shift+f10.
         #[arg(long, value_name = "HOTKEY")]
         stop_hotkey: Option<HotkeyBinding>,
+
+        /// Relaunch this playback command as administrator before dispatch begins.
+        #[arg(long, default_value_t = false)]
+        elevate: bool,
     },
 
     /// Record keyboard and mouse input using the selected Windows recording strategy.
@@ -148,6 +154,10 @@ enum Command {
         /// Hotkey that stops the active recording or playback action.
         #[arg(long, value_name = "HOTKEY")]
         stop_hotkey: HotkeyBinding,
+
+        /// Relaunch this control loop as administrator before arming playback-capable hotkeys.
+        #[arg(long, default_value_t = false)]
+        elevate: bool,
     },
 
     /// Run preflight checks for environment, recordings, playback, or control-loop configuration.
@@ -258,6 +268,7 @@ struct ControlCommandConfiguration {
     play_speed: f64,
     start_play_hotkey: Option<HotkeyBinding>,
     stop_hotkey: HotkeyBinding,
+    elevate: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -440,7 +451,8 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             speed,
             start_hotkey,
             stop_hotkey,
-        } => play_recording_file(&input, speed, start_hotkey, stop_hotkey),
+            elevate,
+        } => play_recording_file(&input, speed, start_hotkey, stop_hotkey, elevate),
         Command::Record {
             output,
             title,
@@ -466,6 +478,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             play_speed,
             start_play_hotkey,
             stop_hotkey,
+            elevate,
         } => run_control_command(ControlCommandConfiguration {
             record_output,
             record_title,
@@ -476,6 +489,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
             play_speed,
             start_play_hotkey,
             stop_hotkey,
+            elevate,
         }),
         Command::Doctor { json, command } => run_doctor_command(command, json),
         Command::Diagnostics { json, command } => run_diagnostics_command(command, json),
@@ -600,12 +614,15 @@ fn play_recording_file(
     speed: f64,
     start_hotkey: Option<HotkeyBinding>,
     stop_hotkey: Option<HotkeyBinding>,
+    elevate: bool,
 ) -> Result<(), CliError> {
     let resolved_input_path = resolve_session_input_path(path);
     let recording = load_recording(&resolved_input_path)?;
     let speed = SpeedMultiplier::new(speed)?;
     let stop_requested = Arc::new(AtomicBool::new(false));
     let control_controller = ControlController;
+
+    maybe_relaunch_current_command_with_elevation(elevate, "playback")?;
 
     install_shutdown_handler(&stop_requested, None)?;
 
@@ -664,6 +681,7 @@ fn run_control_command(configuration: ControlCommandConfiguration) -> Result<(),
         play_speed,
         start_play_hotkey,
         stop_hotkey,
+        elevate,
     } = configuration;
 
     let record_duration_seconds = validate_optional_duration(record_duration_seconds)?;
@@ -687,6 +705,11 @@ fn run_control_command(configuration: ControlCommandConfiguration) -> Result<(),
             .as_ref()
             .map(|(_, hotkey, _)| hotkey.clone()),
     )?;
+
+    if elevate && playback_action.is_some() {
+        maybe_relaunch_current_command_with_elevation(elevate, "playback")?;
+    }
+
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let current_action_stop_target = Arc::new(Mutex::new(None));
     let control_controller = ControlController;
@@ -1307,6 +1330,37 @@ fn check_output_path_parent(path: &Path) -> DiagnosticCheck {
             ),
         ),
     }
+}
+
+fn maybe_relaunch_current_command_with_elevation(
+    elevate: bool,
+    operation: &'static str,
+) -> Result<(), CliError> {
+    if !elevate {
+        return Ok(());
+    }
+
+    match ensure_current_process_is_elevated(operation) {
+        Ok(()) => Ok(()),
+        Err(WindowsBackendError::ElevationRequired { .. }) => {
+            println!(
+                "relaunching the current command with elevation for {}",
+                operation
+            );
+
+            let elevated_exit_code = relaunch_process_elevated_and_wait(
+                &std::env::current_exe()?,
+                &current_command_arguments_for_elevation_relaunch(),
+            )?;
+
+            std::process::exit(elevated_exit_code as i32);
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn current_command_arguments_for_elevation_relaunch() -> Vec<OsString> {
+    std::env::args_os().skip(1).collect()
 }
 
 fn finish_doctor_command(summary: DiagnosticSummary) -> Result<(), CliError> {
@@ -2132,6 +2186,7 @@ mod tests {
             "ctrl+shift+f10",
             "--stop-hotkey",
             "ctrl+shift+f12",
+            "--elevate",
         ])
         .expect("control command should parse");
 
@@ -2142,6 +2197,7 @@ mod tests {
                 play_input,
                 start_play_hotkey,
                 stop_hotkey,
+                elevate,
                 ..
             } => {
                 assert_eq!(record_output, Some(PathBuf::from("demo.json")));
@@ -2155,8 +2211,24 @@ mod tests {
                     Some(String::from("Ctrl+Shift+F10"))
                 );
                 assert_eq!(stop_hotkey.to_string(), "Ctrl+Shift+F12");
+                assert!(elevate);
             }
             _ => panic!("expected the control command variant"),
+        }
+    }
+
+    #[test]
+    fn play_command_parser_accepts_elevate_flag() {
+        let cli =
+            Cli::try_parse_from(["regxorder-cli", "play", "--input", "demo.json", "--elevate"])
+                .expect("play command should parse");
+
+        match cli.command {
+            Command::Play { input, elevate, .. } => {
+                assert_eq!(input, PathBuf::from("demo.json"));
+                assert!(elevate);
+            }
+            _ => panic!("expected the play command variant"),
         }
     }
 
@@ -2174,6 +2246,7 @@ mod tests {
             stop_hotkey: "ctrl+shift+f12"
                 .parse::<HotkeyBinding>()
                 .expect("stop hotkey should parse"),
+            elevate: false,
         })
         .expect_err("control command should reject incomplete recording configuration");
 
@@ -2197,6 +2270,7 @@ mod tests {
             stop_hotkey: "ctrl+shift+f12"
                 .parse::<HotkeyBinding>()
                 .expect("stop hotkey should parse"),
+            elevate: false,
         })
         .expect_err("control command should reject incomplete playback configuration");
 
@@ -2220,6 +2294,7 @@ mod tests {
             stop_hotkey: "ctrl+shift+f12"
                 .parse::<HotkeyBinding>()
                 .expect("stop hotkey should parse"),
+            elevate: false,
         })
         .expect_err("control command should require at least one control action");
 

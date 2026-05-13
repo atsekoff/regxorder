@@ -18,7 +18,7 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSEINPUT, SendInput,
 };
 
-use crate::WindowsBackendError;
+use crate::{ProcessElevationStatus, WindowsBackendError, current_process_elevation_status};
 
 const SPIN_THRESHOLD: Duration = Duration::from_millis(2);
 const XBUTTON1_DATA: u32 = 0x0001;
@@ -166,7 +166,16 @@ fn send_inputs(inputs: &[INPUT]) -> Result<(), WindowsBackendError> {
     if submitted == requested {
         Ok(())
     } else if submitted == 0 {
-        Err(WindowsBackendError::last_os_error("SendInput"))
+        match current_process_elevation_status() {
+            Ok(ProcessElevationStatus::NotElevated) => {
+                Err(WindowsBackendError::ElevationRequired {
+                    operation: "playback",
+                })
+            }
+            Ok(ProcessElevationStatus::Elevated) | Err(_) => {
+                Err(WindowsBackendError::last_os_error("SendInput"))
+            }
+        }
     } else {
         Err(WindowsBackendError::PartialSend {
             requested,

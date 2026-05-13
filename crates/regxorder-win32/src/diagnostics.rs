@@ -1,21 +1,11 @@
-use std::mem::size_of;
-
 use regxorder_core::{DiagnosticCheck, EnvironmentDoctorReport, HotkeyBinding};
-use windows_sys::Win32::{
-    Foundation::CloseHandle,
-    Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation},
-    System::Threading::{GetCurrentProcess, OpenProcessToken},
+
+use crate::{
+    HotkeyRegistration, ProcessElevationStatus, WindowsBackendError,
+    current_process_elevation_status, hotkeys::probe_hotkey_registration,
 };
 
-use crate::{HotkeyRegistration, WindowsBackendError, hotkeys::probe_hotkey_registration};
-
 const DOCTOR_HOTKEY_PROBE_IDENTIFIER: i32 = 91;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProcessElevationStatus {
-    Elevated,
-    NotElevated,
-}
 
 /// Builds a structured environment doctor report for the Windows backend surface.
 pub fn diagnose_windows_environment(hotkey_probe: HotkeyBinding) -> EnvironmentDoctorReport {
@@ -23,7 +13,7 @@ pub fn diagnose_windows_environment(hotkey_probe: HotkeyBinding) -> EnvironmentD
         DOCTOR_HOTKEY_PROBE_IDENTIFIER,
         &hotkey_probe,
     ));
-    let process_elevation_result = query_process_elevation_status();
+    let process_elevation_result = current_process_elevation_status();
 
     build_environment_report(hotkey_probe, hotkey_probe_result, process_elevation_result)
 }
@@ -87,41 +77,6 @@ fn build_environment_report(
         hotkey_probe,
         checks,
     )
-}
-
-fn query_process_elevation_status() -> Result<ProcessElevationStatus, WindowsBackendError> {
-    let mut token_handle = std::ptr::null_mut();
-    let opened = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle) };
-    if opened == 0 {
-        return Err(WindowsBackendError::last_os_error("OpenProcessToken"));
-    }
-
-    let mut token_elevation: TOKEN_ELEVATION = unsafe { std::mem::zeroed() };
-    let mut returned_length = 0_u32;
-    let queried = unsafe {
-        GetTokenInformation(
-            token_handle,
-            TokenElevation,
-            (&mut token_elevation as *mut TOKEN_ELEVATION).cast(),
-            size_of::<TOKEN_ELEVATION>() as u32,
-            &mut returned_length,
-        )
-    };
-    let query_result = if queried == 0 {
-        Err(WindowsBackendError::last_os_error("GetTokenInformation"))
-    } else {
-        Ok(if token_elevation.TokenIsElevated == 0 {
-            ProcessElevationStatus::NotElevated
-        } else {
-            ProcessElevationStatus::Elevated
-        })
-    };
-
-    unsafe {
-        CloseHandle(token_handle);
-    }
-
-    query_result
 }
 
 #[cfg(test)]

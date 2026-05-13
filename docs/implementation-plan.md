@@ -410,7 +410,7 @@ Deliverables:
 1. Working CLI commands.
 2. Diagnostics and doctor-style checks for environment, recording, playback, and control-loop configuration.
 3. SDK and CLI integration tests that exercise the public CLI binary rather than private implementation helpers.
-4. Elevated-app support path when the process runs elevated.
+4. Explicit opt-in elevated-run support for playback-capable commands when targeting elevated apps.
 5. Optional global-hotkey start and stop controls for CLI record and play workflows.
 
 Current status:
@@ -418,13 +418,15 @@ Current status:
 1. The CLI has `doctor` commands for `environment`, `recording`, `playback`, and `control` with machine-readable JSON output and doctor-style non-zero exits when checks fail.
 2. The CLI also has `diagnostics` commands for the same targets with deeper inspection output that does not treat failing checks as command failure by itself.
 3. Environment diagnostics currently probe RegisterHotKey availability, session-directory state, and current-process elevation so permission guidance is more actionable.
-4. CLI integration coverage now includes public-binary tests for doctor failure exits and JSON diagnostics output.
+4. The `play` and `control` commands now accept `--elevate` so they can relaunch themselves as administrator before playback begins or playback-capable hotkeys are armed.
+5. CLI coverage now includes public-binary tests for diagnostics behavior plus focused unit coverage for `--elevate` parsing and Windows relaunch argument quoting.
 
 Exit criteria:
 
 1. The CLI can drive the core workflows without private hooks into the implementation.
 2. Capability and permission failures are actionable.
 3. Recording and playback can be started or stopped by configured global hotkeys when desired.
+4. Playback-capable CLI workflows can relaunch elevated before dispatch begins when the operator requests it.
 
 ### Phase 6 - Slint Desktop UI
 
@@ -474,7 +476,7 @@ Exit criteria:
 
 | Risk | Why it matters | Mitigation |
 | --- | --- | --- |
-| Integrity boundaries and UIPI | Playback may fail silently or partially across privilege boundaries | Detect and surface elevation limitations explicitly |
+| Integrity boundaries and UIPI | Playback may fail silently or partially across privilege boundaries | Detect and surface elevation limitations explicitly, and provide an opt-in elevated relaunch path before playback begins |
 | High-frequency mouse input | Event loss or jitter can compromise fidelity | Prefer Raw Input and test buffered handling under load |
 | Hook callback overhead | Slow callbacks can drop hooks or degrade input handling | Keep callbacks minimal and offload work immediately |
 | Coordinate portability | Exact coordinates are machine-specific | Store normalized coordinates and monitor metadata alongside exact values |

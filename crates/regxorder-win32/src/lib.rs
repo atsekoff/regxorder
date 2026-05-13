@@ -2,6 +2,7 @@
 
 mod controller;
 mod diagnostics;
+mod elevation;
 mod error;
 mod hotkey_service;
 mod hotkeys;
@@ -13,6 +14,10 @@ pub use controller::{
     RecordingActionOutcome,
 };
 pub use diagnostics::diagnose_windows_environment;
+pub use elevation::{
+    ProcessElevationStatus, current_process_elevation_status, ensure_current_process_is_elevated,
+    relaunch_process_elevated_and_wait,
+};
 pub use error::WindowsBackendError;
 pub use hotkey_service::{
     HotkeyWaitOutcome, StopHotkeyMonitor, wait_for_hotkey_binding,
