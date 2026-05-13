@@ -438,6 +438,11 @@ Deliverables:
 4. Basic event editing.
 5. Tray and minimized workflow.
 
+Current status:
+
+1. `regxorder-ui` now compiles into a minimal Slint desktop shell with dedicated recording-library, playback, and diagnostics panels.
+2. The UI crate remains thin in this slice; live recording, playback, and doctor-style checks still route through the shared SDK and CLI until the desktop workflows are wired end to end.
+
 Exit criteria:
 
 1. Core workflows are usable without the CLI.

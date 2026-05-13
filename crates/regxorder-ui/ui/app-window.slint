@@ -1,0 +1,125 @@
+import { Button, GroupBox, HorizontalBox, VerticalBox } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "regxorder";
+    width: 1080px;
+    height: 760px;
+    background: #f2f4f7;
+
+    in-out property <string> status_text: "Desktop shell ready.";
+    in-out property <string> library_summary: "No recording library loaded yet.";
+    in-out property <string> selected_recording: "Selected recording: none";
+    in-out property <string> playback_summary: "Playback controls are not wired yet.";
+    in-out property <string> diagnostics_summary: "Diagnostics are not wired yet.";
+
+    callback load_sample_overview_requested();
+    callback refresh_diagnostics_requested();
+
+    VerticalBox {
+        padding: 16px;
+        spacing: 12px;
+
+        Rectangle {
+            height: 108px;
+            border-radius: 14px;
+            background: #17324d;
+
+            VerticalBox {
+                padding: 18px;
+                spacing: 8px;
+
+                Text {
+                    text: "regxorder";
+                    color: #f7fafc;
+                    font-size: 28px;
+                }
+
+                Text {
+                    text: root.status_text;
+                    color: #d8e7f5;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        HorizontalBox {
+            spacing: 12px;
+
+            GroupBox {
+                title: "Recording Library";
+
+                VerticalBox {
+                    padding: 14px;
+                    spacing: 10px;
+
+                    Text {
+                        text: root.library_summary;
+                        wrap: word-wrap;
+                        color: #1d2939;
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: #d0d5dd;
+                    }
+
+                    Text {
+                        text: root.selected_recording;
+                        wrap: word-wrap;
+                        color: #101828;
+                    }
+
+                    Button {
+                        text: "Load Sample Overview";
+                        clicked => { root.load_sample_overview_requested(); }
+                    }
+                }
+            }
+
+            VerticalBox {
+                spacing: 12px;
+
+                GroupBox {
+                    title: "Playback";
+
+                    VerticalBox {
+                        padding: 14px;
+                        spacing: 10px;
+
+                        Text {
+                            text: root.playback_summary;
+                            wrap: word-wrap;
+                            color: #1d2939;
+                        }
+
+                        Text {
+                            text: "This layout reserves space for speed, start-hotkey, and stop-hotkey controls.";
+                            wrap: word-wrap;
+                            color: #475467;
+                        }
+                    }
+                }
+
+                GroupBox {
+                    title: "Diagnostics";
+
+                    VerticalBox {
+                        padding: 14px;
+                        spacing: 10px;
+
+                        Text {
+                            text: root.diagnostics_summary;
+                            wrap: word-wrap;
+                            color: #1d2939;
+                        }
+
+                        Button {
+                            text: "Refresh Diagnostics Guidance";
+                            clicked => { root.refresh_diagnostics_requested(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
