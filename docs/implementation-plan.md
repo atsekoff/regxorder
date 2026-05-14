@@ -440,8 +440,12 @@ Deliverables:
 
 Current status:
 
-1. `regxorder-ui` now compiles into a minimal Slint desktop shell with dedicated recording-library, playback, and diagnostics panels.
-2. The UI crate remains thin in this slice; live recording, playback, and doctor-style checks still route through the shared SDK and CLI until the desktop workflows are wired end to end.
+1. `regxorder-ui` now compiles into a Slint shell with a compact toolbar, left-side navigation, and dedicated editor, diagnostics, and settings views instead of a single text-heavy dashboard.
+2. The editor view discovers validated session files from the shared `sessions/` directory, supports direct selection through a compact dropdown, surfaces invalid JSON files only when needed, filters large event lists in Rust before rendering, and hides pointer-move rows by default for responsiveness.
+3. The controls flow can start a new recording, stop the active record or playback action, auto-save new captures into `sessions/`, play the selected session through the shared controller path, and delete individual visible events directly from the list with immediate persistence back to the same session file.
+4. The settings view now exposes real UI-side configuration for recording strategy, playback speed selection, and a shared stop-action hotkey binding that is passed through to both recording and playback requests.
+5. The Slint UI has started moving toward a modular structure with extracted shared components and updated Copilot instructions for splitting future UI work across feature-specific files instead of continuing to grow a single monolithic window file.
+6. Import/export, richer event authoring beyond row deletion, tray/minimized workflow, and explicit UI-side elevation handling are still pending in Phase 6.
 
 Exit criteria:
 

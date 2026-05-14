@@ -43,3 +43,7 @@
 - The UI direction is Slint.
 - Favor clarity, responsiveness, keyboard-friendly workflows, and efficient handling of large recordings over decorative visuals or heavy animation.
 - Use terminology in the UI that matches the SDK and CLI.
+- Keep `regxorder-ui` modular. Split large Slint surfaces into imported components or feature view files instead of growing a single `app-window.slint`.
+- Keep Slint declarative. Filtering, formatting, validation, hotkey parsing, and state mutation belong in Rust view-model or handler code.
+- Prefer explicit one-way state sync for UI updates: Rust model -> display state struct -> Slint properties, and Slint callbacks -> Rust handlers for user actions.
+- For large event lists, prepare filtered or summarized rows in Rust before they reach Slint. Avoid heavy per-row work or broad property recomputation in `.slint`.
