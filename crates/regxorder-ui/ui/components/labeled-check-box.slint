@@ -1,0 +1,41 @@
+import { Theme } from "../theme.slint";
+
+export component LabeledCheckBox inherits Rectangle {
+    in property <string> label;
+    in property <bool> checked: false;
+    in property <bool> enabled: true;
+    callback toggled(checked: bool);
+
+    width: label_text.x + label_text.width + 14px;
+    height: 28px;
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: !root.enabled ? Theme.panel-border : root.checked ? Theme.accent-soft-border : Theme.panel-border;
+    background: !root.enabled ? #eef2f5 : root.checked ? Theme.accent-soft : Theme.panel-background;
+
+    indicator := Rectangle {
+        x: 9px;
+        y: 7px;
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        border-width: root.checked ? 0px : 1px;
+        border-color: Theme.accent-soft-border;
+        background: root.checked ? Theme.accent : Theme.panel-background;
+    }
+
+    label_text := Text {
+        x: 30px;
+        y: 7px;
+        text: root.label;
+        color: root.enabled ? Theme.text-subtle : #8b847a;
+        font-size: 12px;
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.toggled(!root.checked);
+        }
+    }
+}

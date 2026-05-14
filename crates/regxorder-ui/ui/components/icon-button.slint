@@ -1,0 +1,47 @@
+import { Theme } from "../theme.slint";
+
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> enabled: true;
+    in property <bool> selected: false;
+    in property <bool> success: false;
+    in property <bool> danger: false;
+    in property <string> control_accessible_label: "";
+    in property <string> control_accessible_description: "";
+    in property <length> button_width: 34px;
+    in property <length> button_height: 34px;
+    callback tapped();
+
+    accessible-role: button;
+    accessible-label: root.control_accessible_label;
+    accessible-description: root.control_accessible_description;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.tapped();
+        }
+    }
+
+    width: root.button_width;
+    height: root.button_height;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: !root.enabled ? Theme.divider : root.success ? Theme.success-border : root.danger ? Theme.danger-border : root.selected ? Theme.accent-soft-border : Theme.divider;
+    background: !root.enabled ? Theme.surface-muted : root.success ? Theme.success-soft : root.danger ? Theme.danger-soft : root.selected ? Theme.accent-soft : Theme.surface;
+
+    Image {
+        width: 16px;
+        height: 16px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        opacity: root.enabled ? 1 : 0.45;
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.tapped();
+        }
+    }
+}

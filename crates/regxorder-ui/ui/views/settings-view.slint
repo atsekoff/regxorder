@@ -1,0 +1,205 @@
+import { HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
+import { ActionButton } from "../components/action-button.slint";
+import { FlatSelect } from "../components/flat-select.slint";
+import { LabeledCheckBox } from "../components/labeled-check-box.slint";
+import { Theme } from "../theme.slint";
+
+export component SettingsView inherits Rectangle {
+    in property <string> settings_summary;
+    in property <bool> recording_strategy_raw_selected: true;
+    in property <bool> recording_strategy_low_level_selected: false;
+    in property <string> session_directory;
+    in property <string> stop_hotkey_summary;
+    in property <bool> stop_hotkey_control_selected: true;
+    in property <bool> stop_hotkey_alt_selected: false;
+    in property <bool> stop_hotkey_shift_selected: true;
+    in property <bool> stop_hotkey_win_selected: false;
+    in property <int> stop_hotkey_key_index: 0;
+    in property <string> stop_hotkey_key_label: "Escape";
+    in property <string> playback_controls_summary;
+    in property <string> selected_recording_details;
+    callback choose_raw_input_recording_requested();
+    callback choose_low_level_hooks_recording_requested();
+    callback toggle_stop_hotkey_control_requested(enabled: bool);
+    callback toggle_stop_hotkey_alt_requested(enabled: bool);
+    callback toggle_stop_hotkey_shift_requested(enabled: bool);
+    callback toggle_stop_hotkey_win_requested(enabled: bool);
+    callback select_stop_hotkey_key_requested(index: int);
+
+    background: Theme.content-background;
+
+    ScrollView {
+        VerticalBox {
+            padding: 10px;
+            spacing: 10px;
+
+            Text {
+                text: "Settings";
+                color: Theme.text-strong;
+                font-size: 18px;
+            }
+
+            Text {
+                text: root.settings_summary;
+                color: Theme.text-muted;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.divider;
+            }
+
+            Text {
+                text: "Recording Strategy";
+                color: Theme.text-strong;
+                font-size: 14px;
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+
+                ActionButton {
+                    width: 118px;
+                    label: "Raw Input";
+                    selected: root.recording_strategy_raw_selected;
+                    tapped => {
+                        root.choose_raw_input_recording_requested();
+                    }
+                }
+
+                ActionButton {
+                    width: 146px;
+                    label: "Low-Level Hooks";
+                    selected: root.recording_strategy_low_level_selected;
+                    tapped => {
+                        root.choose_low_level_hooks_recording_requested();
+                    }
+                }
+            }
+
+            Text {
+                text: root.session_directory;
+                color: Theme.text-muted;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.divider;
+            }
+
+            Text {
+                text: "Stop Action Hotkey";
+                color: Theme.text-strong;
+                font-size: 14px;
+            }
+
+            Text {
+                text: root.stop_hotkey_summary;
+                color: Theme.text-muted;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+
+            HorizontalBox {
+                spacing: 12px;
+
+                LabeledCheckBox {
+                    label: "Ctrl";
+                    checked: root.stop_hotkey_control_selected;
+                    toggled(checked) => {
+                        root.toggle_stop_hotkey_control_requested(checked);
+                    }
+                }
+
+                LabeledCheckBox {
+                    label: "Alt";
+                    checked: root.stop_hotkey_alt_selected;
+                    toggled(checked) => {
+                        root.toggle_stop_hotkey_alt_requested(checked);
+                    }
+                }
+
+                LabeledCheckBox {
+                    label: "Shift";
+                    checked: root.stop_hotkey_shift_selected;
+                    toggled(checked) => {
+                        root.toggle_stop_hotkey_shift_requested(checked);
+                    }
+                }
+
+                LabeledCheckBox {
+                    label: "Win";
+                    checked: root.stop_hotkey_win_selected;
+                    toggled(checked) => {
+                        root.toggle_stop_hotkey_win_requested(checked);
+                    }
+                }
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+
+                Text {
+                    vertical-alignment: center;
+                    text: "Key";
+                    color: Theme.text-subtle;
+                    font-size: 12px;
+                }
+
+                FlatSelect {
+                    width: 120px;
+                    control_accessible_label: "Stop hotkey key";
+                    model: [
+                        "Escape",
+                        "F1",
+                        "F2",
+                        "F3",
+                        "F4",
+                        "F5",
+                        "F6",
+                        "F7",
+                        "F8",
+                        "F9",
+                        "F10",
+                        "F11",
+                        "F12"
+                    ];
+                    selected_index: root.stop_hotkey_key_index;
+                    selected_label: root.stop_hotkey_key_label;
+                    selection_requested(index) => {
+                        root.select_stop_hotkey_key_requested(index);
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: Theme.divider;
+            }
+
+            Text {
+                text: "Playback & Session";
+                color: Theme.text-strong;
+                font-size: 14px;
+            }
+
+            Text {
+                text: root.playback_controls_summary;
+                color: Theme.text-subtle;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: root.selected_recording_details;
+                color: Theme.text-subtle;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

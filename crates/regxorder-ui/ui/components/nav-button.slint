@@ -1,0 +1,26 @@
+import { Theme } from "../theme.slint";
+
+export component NavButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback tapped();
+
+    height: 36px;
+    border-radius: 12px;
+    background: root.selected ? Theme.accent-soft : Theme.panel-background;
+
+    Text {
+        x: 14px;
+        y: 9px;
+        width: parent.width - 28px;
+        text: root.label;
+        color: root.selected ? Theme.accent : #556474;
+        font-size: 14px;
+    }
+
+    TouchArea {
+        clicked => {
+            root.tapped();
+        }
+    }
+}

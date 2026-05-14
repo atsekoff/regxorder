@@ -1,0 +1,263 @@
+import {
+    HorizontalBox,
+    ScrollView,
+    VerticalBox,
+} from "std-widgets.slint";
+import { EventFilterButton } from "../components/event-filter-button.slint";
+import { EventRow } from "../components/event-row.slint";
+import { FlatSelect } from "../components/flat-select.slint";
+import { IconButton } from "../components/icon-button.slint";
+import { Theme } from "../theme.slint";
+
+export component EditorView inherits Rectangle {
+    in property <string> session_directory;
+    in property <string> library_summary;
+    in property <bool> has_recordings: false;
+    in property <[string]> recording_titles: [];
+    in property <int> selected_recording_index: -1;
+    in property <string> selected_recording_title;
+    in property <string> editor_summary;
+    in property <[string]> event_index_labels: [];
+    in property <[string]> event_type_labels: [];
+    in property <[string]> event_parameter_labels: [];
+    in property <[string]> event_duration_labels: [];
+    in property <bool> can_delete_visible_events: false;
+    in property <bool> filter_key_events_selected: true;
+    in property <bool> filter_mouse_button_events_selected: true;
+    in property <bool> filter_mouse_wheel_events_selected: true;
+    in property <bool> filter_pointer_move_events_selected: false;
+    in property <string> filter_key_event_count_label: "0";
+    in property <string> filter_mouse_button_event_count_label: "0";
+    in property <string> filter_mouse_wheel_event_count_label: "0";
+    in property <string> filter_pointer_move_event_count_label: "0";
+    in property <bool> can_save_editor_changes: false;
+    in property <bool> can_revert_editor_changes: false;
+    in property <bool> can_delete_selected_recording: false;
+    in property <string> selected_recording_details;
+    in property <string> playback_execution_status;
+    in property <string> playback_summary;
+    in property <string> playback_checks;
+    in property <bool> has_invalid_recordings: false;
+    in property <string> invalid_recordings_summary;
+    callback refresh_library_requested();
+    callback select_recording_requested(index: int);
+    callback delete_selected_recording_requested();
+    callback save_editor_changes_requested();
+    callback revert_editor_changes_requested();
+    callback delete_visible_event_requested(index: int);
+    callback filter_key_events_requested(enabled: bool);
+    callback filter_mouse_button_events_requested(enabled: bool);
+    callback filter_mouse_wheel_events_requested(enabled: bool);
+    callback filter_pointer_move_events_requested(enabled: bool);
+
+    background: Theme.content-background;
+
+    Rectangle {
+        x: 10px;
+        y: 0px;
+        width: parent.width - 20px;
+        height: parent.height;
+        background: transparent;
+
+        VerticalBox {
+            width: parent.width;
+            height: parent.height;
+            padding: 0px;
+            spacing: 8px;
+
+            HorizontalBox {
+                spacing: 8px;
+
+                IconButton {
+                    icon: @image-url("../../assets/icons/RefreshIcon.svg");
+                    control_accessible_label: "Refresh sessions";
+                    button_width: 32px;
+                    button_height: 32px;
+                    selected: true;
+                    tapped => {
+                        root.refresh_library_requested();
+                    }
+                }
+
+                FlatSelect {
+                    width: 172px;
+                    enabled: root.has_recordings;
+                    control_accessible_label: "Selected session";
+                    model: root.recording_titles;
+                    selected_index: root.selected_recording_index;
+                    selected_label: root.selected_recording_title;
+                    selection_requested(index) => {
+                        root.select_recording_requested(index);
+                    }
+                }
+
+                IconButton {
+                    icon: @image-url("../../assets/icons/CheckIcon.svg");
+                    control_accessible_label: "Save session changes";
+                    button_width: 32px;
+                    button_height: 32px;
+                    success: root.can_save_editor_changes;
+                    enabled: root.can_save_editor_changes;
+                    tapped => {
+                        root.save_editor_changes_requested();
+                    }
+                }
+
+                IconButton {
+                    icon: @image-url("../../assets/icons/CancelIcon.svg");
+                    control_accessible_label: "Revert session changes";
+                    button_width: 32px;
+                    button_height: 32px;
+                    enabled: root.can_revert_editor_changes;
+                    tapped => {
+                        root.revert_editor_changes_requested();
+                    }
+                }
+
+                IconButton {
+                    icon: @image-url("../../assets/icons/DeleteIcon.svg");
+                    control_accessible_label: "Delete selected session";
+                    button_width: 32px;
+                    button_height: 32px;
+                    danger: true;
+                    enabled: root.can_delete_selected_recording;
+                    tapped => {
+                        root.delete_selected_recording_requested();
+                    }
+                }
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+
+                EventFilterButton {
+                    icon: @image-url("../../assets/icons/KeyboardIcon.svg");
+                    control_accessible_label: "Keyboard events filter";
+                    count_label: root.filter_key_event_count_label;
+                    checked: root.filter_key_events_selected;
+                    toggled(checked) => {
+                        root.filter_key_events_requested(checked);
+                    }
+                }
+
+                EventFilterButton {
+                    icon: @image-url("../../assets/icons/MouseButtonIcon.svg");
+                    control_accessible_label: "Mouse button events filter";
+                    count_label: root.filter_mouse_button_event_count_label;
+                    checked: root.filter_mouse_button_events_selected;
+                    toggled(checked) => {
+                        root.filter_mouse_button_events_requested(checked);
+                    }
+                }
+
+                EventFilterButton {
+                    icon: @image-url("../../assets/icons/MouseScrollWheelIcon.svg");
+                    control_accessible_label: "Mouse wheel events filter";
+                    count_label: root.filter_mouse_wheel_event_count_label;
+                    checked: root.filter_mouse_wheel_events_selected;
+                    toggled(checked) => {
+                        root.filter_mouse_wheel_events_requested(checked);
+                    }
+                }
+
+                EventFilterButton {
+                    icon: @image-url("../../assets/icons/MouseMoveIcon.svg");
+                    control_accessible_label: "Mouse move events filter";
+                    count_label: root.filter_pointer_move_event_count_label;
+                    checked: root.filter_pointer_move_events_selected;
+                    toggled(checked) => {
+                        root.filter_pointer_move_events_requested(checked);
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: transparent;
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                border-width: 1px;
+                border-color: Theme.divider;
+                background: Theme.surface;
+
+                VerticalBox {
+                    spacing: 0px;
+
+                    Rectangle {
+                        height: 28px;
+                        background: Theme.panel-background-muted;
+
+                        HorizontalBox {
+                            padding: 6px;
+                            spacing: 10px;
+
+                            Text {
+                                width: Theme.event-index-column-width;
+                                text: "#";
+                                color: Theme.text-subtle;
+                                font-size: 11px;
+                            }
+
+                            Text {
+                                width: Theme.event-type-column-width;
+                                text: "Type";
+                                color: Theme.text-subtle;
+                                font-size: 11px;
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+
+                                Text {
+                                    text: "Parameters";
+                                    color: Theme.text-subtle;
+                                    font-size: 11px;
+                                }
+                            }
+
+                            Text {
+                                width: Theme.event-duration-column-width;
+                                text: "Duration";
+                                color: Theme.text-subtle;
+                                font-size: 11px;
+                            }
+
+                            Rectangle {
+                                width: Theme.event-delete-column-width;
+                                background: transparent;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.divider;
+                    }
+
+                    ScrollView {
+                        vertical-stretch: 1;
+
+                        VerticalBox {
+                            padding: 0px;
+                            spacing: 0px;
+
+                            for index_label[index] in root.event_index_labels: EventRow {
+                                index_label: index_label;
+                                type_label: root.event_type_labels[index];
+                                parameter_label: root.event_parameter_labels[index];
+                                duration_label: root.event_duration_labels[index];
+                                delete_enabled: root.can_delete_visible_events;
+                                delete_requested => {
+                                    root.delete_visible_event_requested(index);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

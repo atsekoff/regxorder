@@ -1,0 +1,105 @@
+import { HorizontalBox } from "std-widgets.slint";
+import { IconButton } from "icon-button.slint";
+import { Theme } from "../theme.slint";
+
+export component EventRow inherits Rectangle {
+    in property <string> index_label;
+    in property <string> type_label;
+    in property <string> parameter_label;
+    in property <string> duration_label;
+    in property <bool> delete_enabled: true;
+    callback delete_requested();
+
+    property <bool> placeholder: root.index_label == "";
+
+    height: 32px;
+    border-radius: 0px;
+    border-width: 0px;
+    background: Theme.surface;
+
+    HorizontalBox {
+        padding: 6px;
+        spacing: 10px;
+
+        Rectangle {
+            width: Theme.event-index-column-width;
+            height: 20px;
+            background: transparent;
+
+            Text {
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                text: root.index_label;
+                color: root.placeholder ? Theme.text-muted : Theme.text-strong;
+                font-size: 11px;
+            }
+        }
+
+        Rectangle {
+            width: Theme.event-type-column-width;
+            height: 20px;
+            background: transparent;
+
+            Text {
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                text: root.type_label;
+                color: root.placeholder ? Theme.text-muted : Theme.text-strong;
+                font-size: 11px;
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            height: 20px;
+            background: transparent;
+            clip: true;
+
+            Text {
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                text: root.parameter_label;
+                color: Theme.text-muted;
+                font-size: 11px;
+            }
+        }
+
+        Rectangle {
+            width: Theme.event-duration-column-width;
+            height: 20px;
+            background: transparent;
+
+            Text {
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                text: root.duration_label;
+                color: Theme.text-subtle;
+                font-size: 11px;
+            }
+        }
+
+        if root.delete_enabled && !root.placeholder: IconButton {
+            icon: @image-url("../../assets/icons/DeleteIcon.svg");
+            control_accessible_label: "Delete event";
+            button_width: Theme.event-delete-column-width;
+            button_height: 20px;
+            danger: true;
+            enabled: root.delete_enabled;
+            tapped => {
+                root.delete_requested();
+            }
+        }
+
+        if !root.delete_enabled || root.placeholder: Rectangle {
+            width: Theme.event-delete-column-width;
+            background: transparent;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}

@@ -1,0 +1,55 @@
+import { ComboBox } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+
+export component FlatSelect inherits Rectangle {
+    in property <[string]> model: [];
+    in property <int> selected_index: -1;
+    in property <string> selected_label: "";
+    in property <bool> enabled: true;
+    in property <string> control_accessible_label: "";
+    callback selection_requested(index: int);
+
+    forward-focus: combo_box;
+
+    height: 32px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.divider;
+    background: root.enabled ? Theme.surface : Theme.surface-muted;
+
+    Text {
+        x: 10px;
+        y: 8px;
+        width: parent.width - 28px;
+        text: root.selected_label == "" ? "No sessions" : root.selected_label;
+        color: root.enabled ? Theme.text-strong : Theme.text-muted;
+        font-size: 12px;
+    }
+
+    Text {
+        x: parent.width - self.width - 10px;
+        y: 8px;
+        text: "v";
+        color: Theme.text-muted;
+        font-size: 11px;
+    }
+
+    combo_box := ComboBox {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        opacity: 0.01;
+        model: root.model;
+        current-index: root.selected_index < 0 ? 0 : root.selected_index;
+        current-value: root.selected_label;
+        accessible-label: root.control_accessible_label;
+        accessible-value: root.selected_label == "" ? "No sessions" : root.selected_label;
+        selected(_) => {
+            if self.current-index >= 0 {
+                root.selection_requested(self.current-index);
+            }
+        }
+    }
+}

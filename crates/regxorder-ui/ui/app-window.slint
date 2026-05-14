@@ -1,122 +1,333 @@
-import { Button, GroupBox, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { ShellToolbar } from "views/shell-toolbar.slint";
+import { SidebarNav } from "views/sidebar-nav.slint";
+import { EditorView } from "views/editor-view.slint";
+import { DiagnosticsView } from "views/diagnostics-view.slint";
+import { SettingsView } from "views/settings-view.slint";
 
 export component AppWindow inherits Window {
     title: "regxorder";
-    width: 1080px;
-    height: 760px;
-    background: #f2f4f7;
+    width: 560px;
+    height: 540px;
+    background: Theme.window-background;
 
-    in-out property <string> status_text: "Desktop shell ready.";
+    in-out property <string> toolbar_status_label: "Status: Idle";
+    in-out property <string> toolbar_file_label: "File: No session";
+    in-out property <string> toolbar_detail_label: "Record a new session or play the selected one.";
+    in-out property <bool> show_editor_view: true;
+    in-out property <bool> show_diagnostics_view: false;
+    in-out property <bool> show_settings_view: false;
+    in-out property <bool> editor_tab_selected: true;
+    in-out property <bool> diagnostics_tab_selected: false;
+    in-out property <bool> settings_tab_selected: false;
+    in-out property <string> session_directory: "Sessions directory: sessions";
     in-out property <string> library_summary: "No recording library loaded yet.";
-    in-out property <string> selected_recording: "Selected recording: none";
-    in-out property <string> playback_summary: "Playback controls are not wired yet.";
-    in-out property <string> diagnostics_summary: "Diagnostics are not wired yet.";
+    in-out property <bool> has_recordings: false;
+    in-out property <[string]> recording_titles: ["No recordings found."];
+    in-out property <[string]> recording_subtitles: ["Refresh the library to load saved sessions."];
+    in-out property <int> selected_recording_index: -1;
+    in-out property <bool> has_invalid_recordings: false;
+    in-out property <string> invalid_recordings_summary: "";
+    in-out property <string> selected_recording_title: "No session selected";
+    in-out property <string> selected_recording_details: "Session details will appear here.";
+    in-out property <string> playback_controls_summary: "Playback controls are not available yet.";
+    in-out property <string> playback_execution_status: "Playback is idle.";
+    in-out property <string> playback_summary: "Playback readiness is not available yet.";
+    in-out property <string> playback_checks: "Playback checks will appear here.";
+    in-out property <string> playback_speed_input_text: "1.0";
+    in-out property <string> playback_speed_validation_message: "";
+    in-out property <[string]> event_index_labels: [""];
+    in-out property <[string]> event_type_labels: ["No session"];
+    in-out property <[string]> event_parameter_labels: ["Select a session to inspect or edit its events."];
+    in-out property <[string]> event_duration_labels: [""];
+    in-out property <int> selected_event_index: -1;
+    in-out property <string> editor_summary: "Event editor is waiting for a session.";
+    in-out property <bool> can_delete_visible_events: false;
+    in-out property <bool> filter_key_events_selected: true;
+    in-out property <bool> filter_mouse_button_events_selected: true;
+    in-out property <bool> filter_mouse_wheel_events_selected: true;
+    in-out property <bool> filter_pointer_move_events_selected: false;
+    in-out property <string> filter_key_event_count_label: "0";
+    in-out property <string> filter_mouse_button_event_count_label: "0";
+    in-out property <string> filter_mouse_wheel_event_count_label: "0";
+    in-out property <string> filter_pointer_move_event_count_label: "0";
+    in-out property <string> stop_hotkey_summary: "Stop recording or playback with Ctrl+Shift+F12.";
+    in-out property <bool> stop_hotkey_control_selected: true;
+    in-out property <bool> stop_hotkey_alt_selected: false;
+    in-out property <bool> stop_hotkey_shift_selected: true;
+    in-out property <bool> stop_hotkey_win_selected: false;
+    in-out property <int> stop_hotkey_key_index: 12;
+    in-out property <string> stop_hotkey_key_label: "F12";
+    in-out property <string> selected_event_label: "No event selected";
+    in-out property <string> selected_event_detail: "Select an event from the list to inspect it.";
+    in-out property <string> selected_event_toggle_label: "Toggle state";
+    in-out property <bool> can_start_recording: true;
+    in-out property <bool> can_play_selected_recording: false;
+    in-out property <bool> can_stop_active_action: false;
+    in-out property <bool> can_save_editor_changes: false;
+    in-out property <bool> can_revert_editor_changes: false;
+    in-out property <bool> can_delete_selected_recording: false;
+    in-out property <bool> can_duplicate_selected_event: false;
+    in-out property <bool> can_delete_selected_event: false;
+    in-out property <bool> can_toggle_selected_event_state: false;
+    in-out property <bool> can_nudge_selected_event_earlier: false;
+    in-out property <bool> can_nudge_selected_event_later: false;
+    in-out property <bool> playback_is_running: false;
+    in-out property <bool> speed_half_selected: false;
+    in-out property <bool> speed_normal_selected: true;
+    in-out property <bool> speed_fast_selected: false;
+    in-out property <bool> recording_strategy_raw_selected: true;
+    in-out property <bool> recording_strategy_low_level_selected: false;
+    in-out property <string> diagnostics_summary: "Diagnostics are not available yet.";
+    in-out property <string> diagnostics_checks: "Diagnostics checks will appear here.";
+    in-out property <string> settings_summary: "Settings are not available yet.";
 
-    callback load_sample_overview_requested();
+    callback refresh_library_requested();
+    callback select_recording_requested(index: int);
+    callback delete_selected_recording_requested();
+    callback show_editor_requested();
+    callback show_diagnostics_requested();
+    callback show_settings_requested();
+    callback select_event_requested(index: int);
+    callback delete_visible_event_requested(index: int);
+    callback filter_key_events_requested(enabled: bool);
+    callback filter_mouse_button_events_requested(enabled: bool);
+    callback filter_mouse_wheel_events_requested(enabled: bool);
+    callback filter_pointer_move_events_requested(enabled: bool);
+    callback toggle_stop_hotkey_control_requested(enabled: bool);
+    callback toggle_stop_hotkey_alt_requested(enabled: bool);
+    callback toggle_stop_hotkey_shift_requested(enabled: bool);
+    callback toggle_stop_hotkey_win_requested(enabled: bool);
+    callback select_stop_hotkey_key_requested(index: int);
+    callback save_editor_changes_requested();
+    callback revert_editor_changes_requested();
+    callback duplicate_selected_event_requested();
+    callback delete_selected_event_requested();
+    callback toggle_selected_event_state_requested();
+    callback nudge_selected_event_earlier_requested();
+    callback nudge_selected_event_later_requested();
+    callback choose_raw_input_recording_requested();
+    callback choose_low_level_hooks_recording_requested();
+    callback start_recording_requested();
+    callback stop_active_action_requested();
+    callback playback_speed_input_edited(value: string);
+    callback playback_speed_input_committed(value: string);
+    callback choose_half_speed_requested();
+    callback choose_normal_speed_requested();
+    callback choose_fast_speed_requested();
+    callback play_selected_recording_requested();
     callback refresh_diagnostics_requested();
 
+    function commit_playback_speed_input_if_needed() {
+        toolbar.commit_and_blur_playback_speed_input();
+    }
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => {
+            root.commit_playback_speed_input_if_needed();
+        }
+    }
+
     VerticalBox {
-        padding: 16px;
-        spacing: 12px;
+        padding: Theme.shell-padding;
+        spacing: 0px;
 
-        Rectangle {
-            height: 108px;
-            border-radius: 14px;
-            background: #17324d;
-
-            VerticalBox {
-                padding: 18px;
-                spacing: 8px;
-
-                Text {
-                    text: "regxorder";
-                    color: #f7fafc;
-                    font-size: 28px;
-                }
-
-                Text {
-                    text: root.status_text;
-                    color: #d8e7f5;
-                    wrap: word-wrap;
-                }
+        toolbar := ShellToolbar {
+            toolbar_status_label: root.toolbar_status_label;
+            toolbar_file_label: root.toolbar_file_label;
+            toolbar_detail_label: root.toolbar_detail_label;
+            can_start_recording: root.can_start_recording;
+            can_stop_active_action: root.can_stop_active_action;
+            can_play_selected_recording: root.can_play_selected_recording;
+            playback_is_running: root.playback_is_running;
+            playback_speed_input_text: root.playback_speed_input_text;
+            playback_speed_validation_message: root.playback_speed_validation_message;
+            start_recording_requested => {
+                root.start_recording_requested();
+            }
+            stop_active_action_requested => {
+                root.stop_active_action_requested();
+            }
+            play_selected_recording_requested => {
+                root.play_selected_recording_requested();
+            }
+            playback_speed_input_edited(value) => {
+                root.playback_speed_input_edited(value);
+            }
+            playback_speed_input_committed(value) => {
+                root.playback_speed_input_committed(value);
             }
         }
 
         HorizontalBox {
-            spacing: 12px;
+            spacing: 0px;
+            vertical-stretch: 1;
 
-            GroupBox {
-                title: "Recording Library";
-
-                VerticalBox {
-                    padding: 14px;
-                    spacing: 10px;
-
-                    Text {
-                        text: root.library_summary;
-                        wrap: word-wrap;
-                        color: #1d2939;
-                    }
-
-                    Rectangle {
-                        height: 1px;
-                        background: #d0d5dd;
-                    }
-
-                    Text {
-                        text: root.selected_recording;
-                        wrap: word-wrap;
-                        color: #101828;
-                    }
-
-                    Button {
-                        text: "Load Sample Overview";
-                        clicked => { root.load_sample_overview_requested(); }
-                    }
+            SidebarNav {
+                vertical-stretch: 1;
+                editor_tab_selected: root.editor_tab_selected;
+                diagnostics_tab_selected: root.diagnostics_tab_selected;
+                settings_tab_selected: root.settings_tab_selected;
+                show_editor_requested => {
+                    root.commit_playback_speed_input_if_needed();
+                    root.show_editor_requested();
+                }
+                show_diagnostics_requested => {
+                    root.commit_playback_speed_input_if_needed();
+                    root.show_diagnostics_requested();
+                }
+                show_settings_requested => {
+                    root.commit_playback_speed_input_if_needed();
+                    root.show_settings_requested();
                 }
             }
 
-            VerticalBox {
-                spacing: 12px;
+            Rectangle {
+                width: 1px;
+                vertical-stretch: 1;
+                background: Theme.divider;
+            }
 
-                GroupBox {
-                    title: "Playback";
+            Rectangle {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                background: Theme.content-background;
 
-                    VerticalBox {
-                        padding: 14px;
-                        spacing: 10px;
-
-                        Text {
-                            text: root.playback_summary;
-                            wrap: word-wrap;
-                            color: #1d2939;
-                        }
-
-                        Text {
-                            text: "This layout reserves space for speed, start-hotkey, and stop-hotkey controls.";
-                            wrap: word-wrap;
-                            color: #475467;
-                        }
+                if root.show_editor_view: EditorView {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    session_directory: root.session_directory;
+                    library_summary: root.library_summary;
+                    has_recordings: root.has_recordings;
+                    recording_titles: root.recording_titles;
+                    selected_recording_index: root.selected_recording_index;
+                    selected_recording_title: root.selected_recording_title;
+                    editor_summary: root.editor_summary;
+                    event_index_labels: root.event_index_labels;
+                    event_type_labels: root.event_type_labels;
+                    event_parameter_labels: root.event_parameter_labels;
+                    event_duration_labels: root.event_duration_labels;
+                    can_delete_visible_events: root.can_delete_visible_events;
+                    filter_key_events_selected: root.filter_key_events_selected;
+                    filter_mouse_button_events_selected: root.filter_mouse_button_events_selected;
+                    filter_mouse_wheel_events_selected: root.filter_mouse_wheel_events_selected;
+                    filter_pointer_move_events_selected: root.filter_pointer_move_events_selected;
+                    filter_key_event_count_label: root.filter_key_event_count_label;
+                    filter_mouse_button_event_count_label: root.filter_mouse_button_event_count_label;
+                    filter_mouse_wheel_event_count_label: root.filter_mouse_wheel_event_count_label;
+                    filter_pointer_move_event_count_label: root.filter_pointer_move_event_count_label;
+                    can_save_editor_changes: root.can_save_editor_changes;
+                    can_revert_editor_changes: root.can_revert_editor_changes;
+                    can_delete_selected_recording: root.can_delete_selected_recording;
+                    selected_recording_details: root.selected_recording_details;
+                    playback_execution_status: root.playback_execution_status;
+                    playback_summary: root.playback_summary;
+                    playback_checks: root.playback_checks;
+                    has_invalid_recordings: root.has_invalid_recordings;
+                    invalid_recordings_summary: root.invalid_recordings_summary;
+                    refresh_library_requested => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.refresh_library_requested();
+                    }
+                    select_recording_requested(index) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.select_recording_requested(index);
+                    }
+                    delete_selected_recording_requested => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.delete_selected_recording_requested();
+                    }
+                    save_editor_changes_requested => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.save_editor_changes_requested();
+                    }
+                    revert_editor_changes_requested => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.revert_editor_changes_requested();
+                    }
+                    delete_visible_event_requested(index) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.delete_visible_event_requested(index);
+                    }
+                    filter_key_events_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.filter_key_events_requested(enabled);
+                    }
+                    filter_mouse_button_events_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.filter_mouse_button_events_requested(enabled);
+                    }
+                    filter_mouse_wheel_events_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.filter_mouse_wheel_events_requested(enabled);
+                    }
+                    filter_pointer_move_events_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.filter_pointer_move_events_requested(enabled);
                     }
                 }
 
-                GroupBox {
-                    title: "Diagnostics";
+                if root.show_diagnostics_view: DiagnosticsView {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    diagnostics_summary: root.diagnostics_summary;
+                    diagnostics_checks: root.diagnostics_checks;
+                    selected_recording_title: root.selected_recording_title;
+                    selected_recording_details: root.selected_recording_details;
+                    playback_summary: root.playback_summary;
+                    playback_checks: root.playback_checks;
+                    refresh_diagnostics_requested => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.refresh_diagnostics_requested();
+                    }
+                }
 
-                    VerticalBox {
-                        padding: 14px;
-                        spacing: 10px;
-
-                        Text {
-                            text: root.diagnostics_summary;
-                            wrap: word-wrap;
-                            color: #1d2939;
-                        }
-
-                        Button {
-                            text: "Refresh Diagnostics Guidance";
-                            clicked => { root.refresh_diagnostics_requested(); }
-                        }
+                if root.show_settings_view: SettingsView {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    settings_summary: root.settings_summary;
+                    recording_strategy_raw_selected: root.recording_strategy_raw_selected;
+                    recording_strategy_low_level_selected: root.recording_strategy_low_level_selected;
+                    session_directory: root.session_directory;
+                    stop_hotkey_summary: root.stop_hotkey_summary;
+                    stop_hotkey_control_selected: root.stop_hotkey_control_selected;
+                    stop_hotkey_alt_selected: root.stop_hotkey_alt_selected;
+                    stop_hotkey_shift_selected: root.stop_hotkey_shift_selected;
+                    stop_hotkey_win_selected: root.stop_hotkey_win_selected;
+                    stop_hotkey_key_index: root.stop_hotkey_key_index;
+                    stop_hotkey_key_label: root.stop_hotkey_key_label;
+                    playback_controls_summary: root.playback_controls_summary;
+                    selected_recording_details: root.selected_recording_details;
+                    choose_raw_input_recording_requested => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.choose_raw_input_recording_requested();
+                    }
+                    choose_low_level_hooks_recording_requested => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.choose_low_level_hooks_recording_requested();
+                    }
+                    toggle_stop_hotkey_control_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.toggle_stop_hotkey_control_requested(enabled);
+                    }
+                    toggle_stop_hotkey_alt_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.toggle_stop_hotkey_alt_requested(enabled);
+                    }
+                    toggle_stop_hotkey_shift_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.toggle_stop_hotkey_shift_requested(enabled);
+                    }
+                    toggle_stop_hotkey_win_requested(enabled) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.toggle_stop_hotkey_win_requested(enabled);
+                    }
+                    select_stop_hotkey_key_requested(index) => {
+                        root.commit_playback_speed_input_if_needed();
+                        root.select_stop_hotkey_key_requested(index);
                     }
                 }
             }
