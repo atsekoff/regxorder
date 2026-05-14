@@ -3,6 +3,8 @@ import { IconButton } from "../components/icon-button.slint";
 import { Theme } from "../theme.slint";
 
 export component SidebarNav inherits Rectangle {
+    property <length> button_size: 32px;
+    property <length> button_spacing: 8px;
     in property <bool> editor_tab_selected: true;
     in property <bool> diagnostics_tab_selected: false;
     in property <bool> settings_tab_selected: false;
@@ -14,15 +16,19 @@ export component SidebarNav inherits Rectangle {
     background: Theme.nav-background;
 
     VerticalBox {
-        padding: 4px;
-        spacing: 6px;
+        spacing: root.button_spacing;
+        padding-top: root.button_spacing;
+        padding-left: (root.width - root.button_size) / 2;
+        padding-right: (root.width - root.button_size) / 2;
+        alignment: start;
 
         IconButton {
             icon: @image-url("../../assets/icons/EditIcon.svg");
             control_accessible_label: "Open event editor";
-            button_width: 32px;
-            button_height: 32px;
+            button_width: root.button_size;
+            button_height: root.button_size;
             selected: root.editor_tab_selected;
+
             tapped => {
                 root.show_editor_requested();
             }
@@ -31,8 +37,8 @@ export component SidebarNav inherits Rectangle {
         IconButton {
             icon: @image-url("../../assets/icons/DiagnosticIcon.svg");
             control_accessible_label: "Open diagnostics";
-            button_width: 32px;
-            button_height: 32px;
+            button_width: root.button_size;
+            button_height: root.button_size;
             selected: root.diagnostics_tab_selected;
             tapped => {
                 root.show_diagnostics_requested();
@@ -42,8 +48,8 @@ export component SidebarNav inherits Rectangle {
         IconButton {
             icon: @image-url("../../assets/icons/SettingsIcon.svg");
             control_accessible_label: "Open settings";
-            button_width: 32px;
-            button_height: 32px;
+            button_width: root.button_size;
+            button_height: root.button_size;
             selected: root.settings_tab_selected;
             tapped => {
                 root.show_settings_requested();
