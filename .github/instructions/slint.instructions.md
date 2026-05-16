@@ -10,6 +10,8 @@ applyTo: "**/*.slint"
 - Prefer reusable components and straightforward data flow between Slint views and Rust view models.
 - Split large UI surfaces into feature view files and shared components. Avoid growing one monolithic `.slint` file when a view or control can be imported instead.
 - Keep one component or one closely related view group per file when practical, and use relative imports to compose the final window.
+- Prefer `HorizontalBox`, `VerticalBox`, and `GridLayout` for flow, spacing, and alignment. Treat layout containers as the default way to compose rows, columns, and sections.
+- Reserve `Rectangle` plus manual coordinates for overlays, borders, dividers, clipping, and explicit anchoring. Avoid coordinate-based placement for ordinary row or column layout when a layout container can express the same structure.
 - Design for large recordings. Lists, inspectors, and editors should avoid heavy per-row computation and chatty bindings.
 - Use Slint for presentation and interaction wiring, not domain logic. Validation, hotkey parsing, filtering, sorting, and summary generation should stay in Rust.
 - Prefer shared style tokens or theme files for repeated colors, spacing, and component chrome instead of duplicating values across many views.

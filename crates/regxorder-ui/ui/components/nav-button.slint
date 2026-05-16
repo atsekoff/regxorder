@@ -1,3 +1,4 @@
+import { HorizontalBox } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 
 export component NavButton inherits Rectangle {
@@ -9,13 +10,25 @@ export component NavButton inherits Rectangle {
     border-radius: 12px;
     background: root.selected ? Theme.accent-soft : Theme.panel-background;
 
-    Text {
-        x: 14px;
-        y: 9px;
-        width: parent.width - 28px;
-        text: root.label;
-        color: root.selected ? Theme.accent : #556474;
-        font-size: 14px;
+    HorizontalBox {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 14px;
+        padding-right: 14px;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: root.label;
+                vertical-alignment: center;
+                color: root.selected ? Theme.accent : #556474;
+                font-size: 14px;
+            }
+        }
     }
 
     TouchArea {

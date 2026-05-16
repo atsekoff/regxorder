@@ -258,9 +258,11 @@ UI expectations:
 1. Functional over flashy.
 2. Fast enough for large recordings and long event lists.
 3. Keyboard-friendly where practical.
-4. Clear status reporting for recording, playback, hotkeys, elevation state, and backend limitations.
-5. Minimal animation.
-6. Stable terminology that matches the SDK and CLI.
+4. Prefer layout-driven composition for flow. Use Slint `HorizontalBox`, `VerticalBox`, or `GridLayout` with explicit spacing, alignment, and padding for rows, columns, and sections.
+5. Reserve `Rectangle` plus manual coordinates for cases that genuinely need overlay, borders, dividers, clipping, or explicit anchoring, not for ordinary row or column layout.
+6. Clear status reporting for recording, playback, hotkeys, elevation state, and backend limitations.
+7. Minimal animation.
+8. Stable terminology that matches the SDK and CLI.
 
 ## Testing Strategy
 

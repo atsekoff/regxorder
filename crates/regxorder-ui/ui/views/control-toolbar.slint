@@ -1,0 +1,121 @@
+import { HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { IconInputField } from "../components/icon-input-field.slint";
+import { IconButton } from "../components/icon-button.slint";
+import { Theme } from "../theme.slint";
+
+export component ControlToolbar inherits Rectangle {
+
+    public function commit_and_blur_toolbar_inputs() {
+        loop_control.commit_and_blur_input();
+        speed_control.commit_and_blur_input();
+    }
+
+    property <length> input_icon_size: 22px;
+    property <length> input_box_height: 32px;
+    in property <string> toolbar_status_label;
+    in property <string> toolbar_file_label;
+    in property <string> toolbar_detail_label;
+    in property <bool> can_start_recording: true;
+    in property <bool> can_stop_active_action: false;
+    in property <bool> can_play_selected_recording: false;
+    in property <bool> playback_is_running: false;
+    in property <string> playback_loop_input_text: "1";
+    in property <string> playback_speed_input_text: "1.0";
+    in property <string> playback_speed_validation_message: "";
+    callback start_recording_requested();
+    callback stop_active_action_requested();
+    callback play_selected_recording_requested();
+    callback playback_loop_input_edited(value: string);
+    callback playback_loop_input_committed(value: string);
+    callback playback_speed_input_edited(value: string);
+    callback playback_speed_input_committed(value: string);
+
+    control_bar_container := GridLayout {
+        col_0_placeholder := HorizontalBox {
+            width: root.width / 3;
+        }
+
+        control_buttons_container := HorizontalBox {
+            alignment: LayoutAlignment.center;
+
+            width: root.width / 3;
+            record_button := IconButton {
+                icon: @image-url("../../assets/icons/RecordIcon_fill.svg");
+                control_accessible_label: "Start recording";
+                button_width: 32px;
+                button_height: 32px;
+                danger: root.can_start_recording;
+                enabled: root.can_start_recording;
+                tapped => {
+                    root.commit_and_blur_toolbar_inputs();
+                    root.start_recording_requested();
+                }
+            }
+
+            stop_button := IconButton {
+                icon: @image-url("../../assets/icons/StopIcon_fill.svg");
+                control_accessible_label: "Stop active action";
+                button_width: 32px;
+                button_height: 32px;
+                selected: root.can_stop_active_action;
+                enabled: root.can_stop_active_action;
+                tapped => {
+                    root.commit_and_blur_toolbar_inputs();
+                    root.stop_active_action_requested();
+                }
+            }
+
+            play_button := IconButton {
+                icon: @image-url("../../assets/icons/PlayIcon_fill.svg");
+                control_accessible_label: "Play selected session";
+                button_width: 32px;
+                button_height: 32px;
+                success: !root.can_stop_active_action && root.can_play_selected_recording;
+                enabled: root.can_play_selected_recording;
+                tapped => {
+                    root.commit_and_blur_toolbar_inputs();
+                    root.play_selected_recording_requested();
+                }
+            }
+        }
+
+        control_config_container := HorizontalBox {
+            width: root.width / 3;
+            alignment: LayoutAlignment.end;
+            spacing: 10px;
+            loop_control := IconInputField {
+                icon: @image-url("../../assets/icons/LoopIcon.svg");
+                input_text: root.playback_loop_input_text;
+                input_accessible_label: "Playback loops";
+                background: #00000000;
+                enabled: !root.can_stop_active_action;
+                icon_size: root.input_icon_size;
+                input_spacing: 2px;
+                input_box_height: root.input_box_height;
+                input_edited(value) => {
+                    root.playback_loop_input_edited(value);
+                }
+                input_committed(value) => {
+                    root.playback_loop_input_committed(value);
+                }
+            }
+
+            speed_control := IconInputField {
+                icon: @image-url("../../assets/icons/ChronometerSpeedIcon.svg");
+                input_text: root.playback_speed_input_text;
+                input_accessible_label: "Playback speed";
+                enabled: !root.can_stop_active_action;
+                allow_decimal: true;
+                icon_size: root.input_icon_size;
+                input_box_width: 38px;
+                input_box_height: root.input_box_height;
+                input_edited(value) => {
+                    root.playback_speed_input_edited(value);
+                }
+                input_committed(value) => {
+                    root.playback_speed_input_committed(value);
+                }
+            }
+        }
+    }
+}

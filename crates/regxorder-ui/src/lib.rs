@@ -34,6 +34,9 @@ use crate::recording_presentation::{
 };
 
 const SESSION_DIRECTORY_NAME: &str = "sessions";
+const DEFAULT_PLAYBACK_LOOP_COUNT: u16 = 1;
+const MIN_PLAYBACK_LOOP_COUNT: u16 = 1;
+const MAX_PLAYBACK_LOOP_COUNT: u16 = 9_999;
 const DEFAULT_PLAYBACK_SPEED_VALUE: f64 = 1.0;
 const MIN_PLAYBACK_SPEED_VALUE: f64 = 0.1;
 const MAX_PLAYBACK_SPEED_VALUE: f64 = 10.0;
@@ -104,6 +107,7 @@ struct DesktopShellState {
     playback_execution_status: SharedString,
     playback_summary: SharedString,
     playback_checks: SharedString,
+    playback_loop_input_text: SharedString,
     playback_speed_input_text: SharedString,
     playback_speed_validation_message: SharedString,
     event_index_labels: ModelRc<SharedString>,
@@ -161,7 +165,9 @@ struct DesktopShellModel {
     configuration: AppConfiguration,
     event_list_filter: EventListFilter,
     environment_report: EnvironmentDoctorReport,
+    selected_playback_loop_count: u16,
     selected_playback_speed: SpeedMultiplier,
+    playback_loop_input_text: String,
     playback_speed_input_text: String,
     playback_speed_validation_message: Option<String>,
     action_execution_state: ActionExecutionState,
@@ -217,6 +223,7 @@ struct RecordingRequest {
 struct PlaybackRequest {
     recording: Recording,
     recording_title: String,
+    loop_count: u16,
     speed: SpeedMultiplier,
     stop_hotkey: Option<HotkeyBinding>,
     stop_requested: Arc<AtomicBool>,
@@ -256,6 +263,7 @@ impl DesktopShellState {
     fn from_model(model: &DesktopShellModel) -> Self {
         let recording_count = model.recording_library.recordings.len();
         let invalid_count = model.recording_library.invalid_recordings.len();
+        let selected_loop_count = model.selected_playback_loop_count;
         let selected_speed = model.selected_playback_speed.get();
         let action_running = model.is_action_running();
         let playback_is_running = matches!(
@@ -330,14 +338,16 @@ impl DesktopShellState {
             selected_recording_title: SharedString::from(selected_recording_title),
             selected_recording_details: SharedString::from(selected_recording_details),
             playback_controls_summary: SharedString::from(format!(
-                "Record {} · Play {}x · {}",
+                "Record {} · Speed {}x · Loop {} · {}",
                 model.configuration.recording_strategy,
                 selected_speed,
+                selected_loop_count,
                 compact_process_elevation_status(&model.environment_report)
             )),
             playback_execution_status: SharedString::from(action_status_title),
             playback_summary: SharedString::from(playback_summary),
             playback_checks: SharedString::from(playback_checks),
+            playback_loop_input_text: SharedString::from(model.playback_loop_input_text.clone()),
             playback_speed_input_text: SharedString::from(model.playback_speed_input_text.clone()),
             playback_speed_validation_message: SharedString::from(
                 model
@@ -462,6 +472,7 @@ impl DesktopShellState {
         window.set_playback_execution_status(self.playback_execution_status.clone());
         window.set_playback_summary(self.playback_summary.clone());
         window.set_playback_checks(self.playback_checks.clone());
+        window.set_playback_loop_input_text(self.playback_loop_input_text.clone());
         window.set_playback_speed_input_text(self.playback_speed_input_text.clone());
         window
             .set_playback_speed_validation_message(self.playback_speed_validation_message.clone());
@@ -533,7 +544,9 @@ impl DesktopShellModel {
             event_list_filter: EventListFilter::default(),
             recording_library,
             environment_report: load_environment_report(),
+            selected_playback_loop_count: DEFAULT_PLAYBACK_LOOP_COUNT,
             selected_playback_speed: default_playback_speed(),
+            playback_loop_input_text: format_playback_loop_input(DEFAULT_PLAYBACK_LOOP_COUNT),
             playback_speed_input_text: format_playback_speed_input(default_playback_speed()),
             playback_speed_validation_message: None,
             action_execution_state: ActionExecutionState::Idle,
@@ -621,6 +634,33 @@ impl DesktopShellModel {
         self.selected_playback_speed = speed;
         self.playback_speed_input_text = format_playback_speed_input(speed);
         self.playback_speed_validation_message = None;
+    }
+
+    fn set_playback_loop_count(&mut self, loop_count: u16) {
+        self.selected_playback_loop_count =
+            loop_count.clamp(MIN_PLAYBACK_LOOP_COUNT, MAX_PLAYBACK_LOOP_COUNT);
+        self.playback_loop_input_text =
+            format_playback_loop_input(self.selected_playback_loop_count);
+    }
+
+    fn set_playback_loop_input_text(&mut self, input: String) {
+        if input.trim().is_empty() {
+            self.playback_loop_input_text =
+                format_playback_loop_input(self.selected_playback_loop_count);
+            return;
+        }
+
+        self.playback_loop_input_text = input;
+
+        if let Some(loop_count) = clamp_playback_loop_input(&self.playback_loop_input_text) {
+            self.selected_playback_loop_count = loop_count;
+        }
+    }
+
+    fn commit_playback_loop_input_text(&mut self) {
+        let committed_loop_count = clamp_playback_loop_input(&self.playback_loop_input_text)
+            .unwrap_or(self.selected_playback_loop_count);
+        self.set_playback_loop_count(committed_loop_count);
     }
 
     fn set_playback_speed_input_text(&mut self, input: String) {
@@ -818,6 +858,7 @@ impl DesktopShellModel {
             ));
         }
 
+        self.commit_playback_loop_input_text();
         self.commit_playback_speed_input_text();
 
         let Some(selected_recording) = self.editable_recording().cloned() else {
@@ -833,6 +874,7 @@ impl DesktopShellModel {
             recording_title: self
                 .current_recording_title()
                 .unwrap_or_else(|| String::from("Selected session")),
+            loop_count: self.selected_playback_loop_count,
             speed: self.selected_playback_speed,
             stop_hotkey: Some(self.configuration.stop_action_hotkey.clone()),
             stop_requested: Arc::clone(&stop_requested),
@@ -1616,6 +1658,32 @@ pub fn run_desktop_ui() -> Result<(), slint::PlatformError> {
     });
 
     let app_window_weak = app_window.as_weak();
+    let model_for_playback_loop = Arc::clone(&model);
+    app_window.on_playback_loop_input_edited(move |value| {
+        let Some(app_window) = app_window_weak.upgrade() else {
+            return;
+        };
+
+        lock_model(&model_for_playback_loop).set_playback_loop_input_text(value.to_string());
+        apply_model_to_window(&app_window, &model_for_playback_loop);
+    });
+
+    let app_window_weak = app_window.as_weak();
+    let model_for_playback_loop_commit = Arc::clone(&model);
+    app_window.on_playback_loop_input_committed(move |value| {
+        let Some(app_window) = app_window_weak.upgrade() else {
+            return;
+        };
+
+        let mut model = lock_model(&model_for_playback_loop_commit);
+        model.set_playback_loop_input_text(value.to_string());
+        model.commit_playback_loop_input_text();
+        drop(model);
+
+        apply_model_to_window(&app_window, &model_for_playback_loop_commit);
+    });
+
+    let app_window_weak = app_window.as_weak();
     let model_for_playback_speed = Arc::clone(&model);
     app_window.on_playback_speed_input_edited(move |value| {
         let Some(app_window) = app_window_weak.upgrade() else {
@@ -1805,26 +1873,49 @@ fn lock_model(model: &Arc<Mutex<DesktopShellModel>>) -> MutexGuard<'_, DesktopSh
 }
 
 fn run_playback_request(playback_request: PlaybackRequest) -> ActionExecutionState {
-    let playback_result = ControlController.run_playback_action(
-        &playback_request.recording,
-        playback_request.speed,
-        playback_request.stop_hotkey.as_ref(),
-        &playback_request.stop_requested,
-    );
+    let mut total_dispatched_events = 0usize;
+    let mut interrupted = false;
+    let mut elapsed_millis = 0.0;
 
-    match playback_result {
-        Ok(playback_outcome) => ActionExecutionState::PlaybackCompleted {
-            recording_title: playback_request.recording_title,
-            speed: playback_request.speed,
-            dispatched_events: playback_outcome.playback_report.dispatched_events,
-            interrupted: playback_outcome.playback_report.interrupted,
-            elapsed_millis: playback_outcome.playback_report.elapsed.as_secs_f64() * 1_000.0,
-        },
-        Err(error) => ActionExecutionState::PlaybackFailed {
-            recording_title: playback_request.recording_title,
-            speed: playback_request.speed,
-            reason: error.to_string(),
-        },
+    for loop_index in 0..playback_request.loop_count {
+        if loop_index > 0 && playback_request.stop_requested.load(Ordering::SeqCst) {
+            interrupted = true;
+            break;
+        }
+
+        let playback_result = ControlController.run_playback_action(
+            &playback_request.recording,
+            playback_request.speed,
+            playback_request.stop_hotkey.as_ref(),
+            &playback_request.stop_requested,
+        );
+
+        match playback_result {
+            Ok(playback_outcome) => {
+                total_dispatched_events += playback_outcome.playback_report.dispatched_events;
+                elapsed_millis += playback_outcome.playback_report.elapsed.as_secs_f64() * 1_000.0;
+                interrupted |= playback_outcome.playback_report.interrupted;
+
+                if playback_outcome.playback_report.interrupted {
+                    break;
+                }
+            }
+            Err(error) => {
+                return ActionExecutionState::PlaybackFailed {
+                    recording_title: playback_request.recording_title,
+                    speed: playback_request.speed,
+                    reason: error.to_string(),
+                };
+            }
+        }
+    }
+
+    ActionExecutionState::PlaybackCompleted {
+        recording_title: playback_request.recording_title,
+        speed: playback_request.speed,
+        dispatched_events: total_dispatched_events,
+        interrupted,
+        elapsed_millis,
     }
 }
 
@@ -2257,6 +2348,22 @@ fn default_playback_speed() -> SpeedMultiplier {
         .expect("default playback speed should be valid")
 }
 
+fn clamp_playback_loop_input(input: &str) -> Option<u16> {
+    let trimmed = input.trim();
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let parsed_loop_count = trimmed.parse::<i32>().ok()?;
+
+    Some(normalize_playback_loop_count(parsed_loop_count))
+}
+
+fn format_playback_loop_input(loop_count: u16) -> String {
+    loop_count.to_string()
+}
+
 fn clamp_playback_speed_input(input: &str) -> Option<SpeedMultiplier> {
     let trimmed = input.trim();
 
@@ -2287,6 +2394,19 @@ fn format_playback_speed_input(speed: SpeedMultiplier) -> String {
     }
 
     formatted
+}
+
+fn normalize_playback_loop_count(parsed_loop_count: i32) -> u16 {
+    let clamped_loop_count = if parsed_loop_count <= 0 {
+        MIN_PLAYBACK_LOOP_COUNT as i32
+    } else {
+        parsed_loop_count.clamp(
+            MIN_PLAYBACK_LOOP_COUNT as i32,
+            MAX_PLAYBACK_LOOP_COUNT as i32,
+        )
+    };
+
+    clamped_loop_count as u16
 }
 
 fn normalize_playback_speed_value(parsed_speed: f64) -> f64 {
@@ -2508,6 +2628,8 @@ mod tests {
     #[test]
     fn playback_request_uses_selected_recording_and_speed() {
         let mut model = sample_model();
+        model.set_playback_loop_input_text(String::from("3"));
+        model.commit_playback_loop_input_text();
         model.set_playback_speed(SpeedMultiplier::new(2.0).expect("speed should be valid"));
 
         let playback_request = model
@@ -2515,12 +2637,31 @@ mod tests {
             .expect("playback request should be available");
 
         assert_eq!(playback_request.recording_title, "Alpha sample");
+        assert_eq!(playback_request.loop_count, 3);
         assert_eq!(playback_request.speed.get(), 2.0);
         assert!(matches!(
             model.action_execution_state,
             super::ActionExecutionState::PlaybackRunning { .. }
         ));
         assert!(model.current_action_stop_requested.is_some());
+    }
+
+    #[test]
+    fn playback_loop_input_clamps_to_supported_range() {
+        let mut model = sample_model();
+
+        model.set_playback_loop_input_text(String::from("0"));
+        assert_eq!(model.selected_playback_loop_count, 1);
+        assert_eq!(model.playback_loop_input_text, "0");
+
+        model.commit_playback_loop_input_text();
+        assert_eq!(model.playback_loop_input_text, "1");
+
+        model.set_playback_loop_input_text(String::from("12000"));
+        assert_eq!(model.selected_playback_loop_count, 9999);
+
+        model.commit_playback_loop_input_text();
+        assert_eq!(model.playback_loop_input_text, "9999");
     }
 
     #[test]
@@ -2900,8 +3041,10 @@ mod tests {
                     ),
                 ],
             ),
+            selected_playback_loop_count: 1,
             selected_playback_speed: SpeedMultiplier::new(1.0)
                 .expect("sample playback speed should be valid"),
+            playback_loop_input_text: String::from("1"),
             playback_speed_input_text: String::from("1.0"),
             playback_speed_validation_message: None,
             action_execution_state: super::ActionExecutionState::Idle,

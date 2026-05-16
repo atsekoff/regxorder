@@ -8,7 +8,7 @@ description = "Slint desktop application for regxorder"
 [dependencies]
 regxorder-core = { path = "../regxorder-core" }
 regxorder-win32 = { path = "../regxorder-win32" }
-slint = "1.13"
+slint = "1.16.1"
 
 [build-dependencies]
-slint-build = "1.13"
+slint-build = "1.16.1"

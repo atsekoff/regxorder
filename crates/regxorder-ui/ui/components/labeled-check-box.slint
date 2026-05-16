@@ -1,3 +1,4 @@
+import { HorizontalBox } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 
 export component LabeledCheckBox inherits Rectangle {
@@ -6,30 +7,38 @@ export component LabeledCheckBox inherits Rectangle {
     in property <bool> enabled: true;
     callback toggled(checked: bool);
 
-    width: label_text.x + label_text.width + 14px;
     height: 28px;
+    preferred-width: label_text.preferred-width + 44px;
     border-radius: 14px;
     border-width: 1px;
     border-color: !root.enabled ? Theme.panel-border : root.checked ? Theme.accent-soft-border : Theme.panel-border;
     background: !root.enabled ? #eef2f5 : root.checked ? Theme.accent-soft : Theme.panel-background;
 
-    indicator := Rectangle {
-        x: 9px;
-        y: 7px;
-        width: 14px;
-        height: 14px;
-        border-radius: 7px;
-        border-width: root.checked ? 0px : 1px;
-        border-color: Theme.accent-soft-border;
-        background: root.checked ? Theme.accent : Theme.panel-background;
-    }
+    HorizontalBox {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 9px;
+        padding-right: 14px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 7px;
 
-    label_text := Text {
-        x: 30px;
-        y: 7px;
-        text: root.label;
-        color: root.enabled ? Theme.text-subtle : #8b847a;
-        font-size: 12px;
+        indicator := Rectangle {
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            border-width: root.checked ? 0px : 1px;
+            border-color: Theme.accent-soft-border;
+            background: root.checked ? Theme.accent : Theme.panel-background;
+        }
+
+        label_text := Text {
+            height: 14px;
+            vertical-alignment: center;
+            text: root.label;
+            color: root.enabled ? Theme.text-subtle : #8b847a;
+            font-size: 12px;
+        }
     }
 
     TouchArea {

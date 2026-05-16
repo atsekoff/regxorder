@@ -17,11 +17,11 @@ export component ActionButton inherits Rectangle {
     background: !root.enabled ? Theme.surface-muted : root.danger ? Theme.danger-soft : root.selected ? Theme.accent-soft : root.primary ? Theme.surface-muted : transparent;
 
     Text {
-        x: 10px;
-        y: (parent.height - self.height) / 2;
-        width: parent.width - 20px;
+        width: parent.width;
+        height: parent.height;
         text: root.label;
         horizontal-alignment: center;
+        vertical-alignment: center;
         color: !root.enabled ? #7d8994 : root.danger ? Theme.danger : Theme.accent;
         font-size: root.label_font_size;
     }

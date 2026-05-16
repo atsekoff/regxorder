@@ -52,18 +52,14 @@ export component EditorView inherits Rectangle {
 
     background: Theme.content-background;
 
-    Rectangle {
-        x: 10px;
-        y: 0px;
-        width: parent.width - 20px;
+    VerticalBox {
+        width: parent.width;
         height: parent.height;
-        background: transparent;
-
-        VerticalBox {
-            width: parent.width;
-            height: parent.height;
-            padding: 0px;
-            spacing: 0px;
+        padding-top: 0px;
+        padding-bottom: 0px;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 0px;
 
             HorizontalBox {
                 spacing: 8px;
@@ -258,6 +254,5 @@ export component EditorView inherits Rectangle {
                     }
                 }
             }
-        }
     }
 }

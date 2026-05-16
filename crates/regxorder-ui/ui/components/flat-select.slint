@@ -1,4 +1,4 @@
-import { ComboBox } from "std-widgets.slint";
+import { ComboBox, HorizontalBox } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 
 export component FlatSelect inherits Rectangle {
@@ -17,26 +17,35 @@ export component FlatSelect inherits Rectangle {
     border-color: Theme.divider;
     background: root.enabled ? Theme.surface : Theme.surface-muted;
 
-    Text {
-        x: 10px;
-        y: 8px;
-        width: parent.width - 28px;
-        text: root.selected_label == "" ? "No sessions" : root.selected_label;
-        color: root.enabled ? Theme.text-strong : Theme.text-muted;
-        font-size: 12px;
-    }
+    HorizontalBox {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 6px;
 
-    Text {
-        x: parent.width - self.width - 10px;
-        y: 8px;
-        text: "v";
-        color: Theme.text-muted;
-        font-size: 11px;
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: root.selected_label == "" ? "No sessions" : root.selected_label;
+                vertical-alignment: center;
+                color: root.enabled ? Theme.text-strong : Theme.text-muted;
+                font-size: 12px;
+            }
+        }
+
+        Rectangle {
+            width: 10px;
+            height: parent.height;
+            background: transparent;
+        }
     }
 
     combo_box := ComboBox {
-        x: 0px;
-        y: 0px;
         width: parent.width;
         height: parent.height;
         enabled: root.enabled;

@@ -1,0 +1,115 @@
+import { HorizontalBox } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+
+export component IconInputField inherits Rectangle {
+    in property <image> icon;
+    in property <string> input_text: "";
+    in property <bool> enabled: true;
+    in property <bool> allow_decimal: false;
+    in property <string> input_accessible_label: "";
+    in property <length> icon_size: 22px;
+    in property <length> input_box_width: 38px;
+    in property <length> input_box_height: 32px;
+    in property <length> input_spacing: 2px;
+    callback input_edited(value: string);
+    callback input_committed(value: string);
+
+    width: root.icon_size + root.input_spacing + root.input_box_width;
+    height: root.input_box_height;
+    forward-focus: input_field;
+
+    HorizontalBox {
+        width: parent.width;
+        height: parent.height;
+        spacing: root.input_spacing;
+        padding: 0px;
+
+        image_container := Rectangle {
+            width: root.icon_size;
+            height: parent.height;
+            background: transparent;
+
+            Image {
+                width: root.icon_size;
+                height: root.icon_size;
+                source: root.icon;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+        }
+
+        field_shell := Rectangle {
+            width: root.input_box_width;
+            height: root.input_box_height;
+            border-width: 1px;
+            border-radius: Theme.control-radius;
+            border-color: input_field.has-focus ? Theme.accent-soft-border : Theme.divider;
+            background: root.enabled ? Theme.surface : Theme.surface-muted;
+
+            TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    input_field.text = root.input_text;
+                    input_field.focus();
+                    input_field.select-all();
+                }
+            }
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                visible: !input_field.has-focus;
+                text: root.input_text;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: root.enabled ? Theme.text-strong : Theme.text-muted;
+                font-size: 12px;
+            }
+
+            input_field := TextInput {
+                width: parent.width;
+                height: parent.height;
+                visible: self.has-focus;
+                text: root.input_text;
+                accessible-label: root.input_accessible_label;
+                color: Theme.text-strong;
+                font-size: 12px;
+                input-type: root.allow_decimal ? decimal : number;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                read-only: !root.enabled;
+                selection-background-color: Theme.accent-soft;
+                selection-foreground-color: Theme.text-strong;
+                private property <bool> commit_on_focus_loss: true;
+
+                edited => {
+                    root.input_edited(self.text);
+                }
+
+                accepted => {
+                    self.commit_on_focus_loss = false;
+                    root.input_committed(self.text);
+                    self.clear-focus();
+                }
+
+                changed has-focus => {
+                    if self.has-focus {
+                        self.commit_on_focus_loss = true;
+                    } else if self.commit_on_focus_loss {
+                        root.input_committed(self.text);
+                    } else {
+                        self.commit_on_focus_loss = true;
+                    }
+                }
+            }
+        }
+    }
+
+    public function commit_and_blur_input() {
+        if input_field.has-focus {
+            input_field.commit_on_focus_loss = false;
+            root.input_committed(input_field.text);
+            input_field.clear-focus();
+        }
+    }
+}

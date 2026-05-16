@@ -1,6 +1,6 @@
 import { HorizontalBox, VerticalBox } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { ShellToolbar } from "views/shell-toolbar.slint";
+import { ControlToolbar } from "views/control-toolbar.slint";
 import { SidebarNav } from "views/sidebar-nav.slint";
 import { EditorView } from "views/editor-view.slint";
 import { DiagnosticsView } from "views/diagnostics-view.slint";
@@ -35,6 +35,7 @@ export component AppWindow inherits Window {
     in-out property <string> playback_execution_status: "Playback is idle.";
     in-out property <string> playback_summary: "Playback readiness is not available yet.";
     in-out property <string> playback_checks: "Playback checks will appear here.";
+    in-out property <string> playback_loop_input_text: "1";
     in-out property <string> playback_speed_input_text: "1.0";
     in-out property <string> playback_speed_validation_message: "";
     in-out property <[string]> event_index_labels: [""];
@@ -111,6 +112,8 @@ export component AppWindow inherits Window {
     callback choose_low_level_hooks_recording_requested();
     callback start_recording_requested();
     callback stop_active_action_requested();
+    callback playback_loop_input_edited(value: string);
+    callback playback_loop_input_committed(value: string);
     callback playback_speed_input_edited(value: string);
     callback playback_speed_input_committed(value: string);
     callback choose_half_speed_requested();
@@ -119,23 +122,26 @@ export component AppWindow inherits Window {
     callback play_selected_recording_requested();
     callback refresh_diagnostics_requested();
 
-    function commit_playback_speed_input_if_needed() {
-        toolbar.commit_and_blur_playback_speed_input();
+    function commit_toolbar_inputs_if_needed() {
+        control_toolbar.commit_and_blur_toolbar_inputs();
     }
 
     TouchArea {
         width: parent.width;
         height: parent.height;
         clicked => {
-            root.commit_playback_speed_input_if_needed();
+            root.commit_toolbar_inputs_if_needed();
         }
     }
 
-    VerticalBox {
+    app_container := VerticalBox {
         padding: Theme.shell-padding;
         spacing: 0px;
 
-        toolbar := ShellToolbar {
+        control_toolbar := ControlToolbar {
+            min-height: 48px;
+            max-height: 48px;
+            horizontal-stretch: 1;
             toolbar_status_label: root.toolbar_status_label;
             toolbar_file_label: root.toolbar_file_label;
             toolbar_detail_label: root.toolbar_detail_label;
@@ -143,6 +149,7 @@ export component AppWindow inherits Window {
             can_stop_active_action: root.can_stop_active_action;
             can_play_selected_recording: root.can_play_selected_recording;
             playback_is_running: root.playback_is_running;
+            playback_loop_input_text: root.playback_loop_input_text;
             playback_speed_input_text: root.playback_speed_input_text;
             playback_speed_validation_message: root.playback_speed_validation_message;
             start_recording_requested => {
@@ -154,6 +161,12 @@ export component AppWindow inherits Window {
             play_selected_recording_requested => {
                 root.play_selected_recording_requested();
             }
+            playback_loop_input_edited(value) => {
+                root.playback_loop_input_edited(value);
+            }
+            playback_loop_input_committed(value) => {
+                root.playback_loop_input_committed(value);
+            }
             playback_speed_input_edited(value) => {
                 root.playback_speed_input_edited(value);
             }
@@ -162,7 +175,13 @@ export component AppWindow inherits Window {
             }
         }
 
-        HorizontalBox {
+        divider := Rectangle {
+            horizontal-stretch: 1;
+            height: 1px;
+            background: Theme.divider;
+        }
+
+        bottom_container := HorizontalBox {
             padding: 0px;
             spacing: 0px;
             vertical-stretch: 1;
@@ -173,26 +192,26 @@ export component AppWindow inherits Window {
                 diagnostics_tab_selected: root.diagnostics_tab_selected;
                 settings_tab_selected: root.settings_tab_selected;
                 show_editor_requested => {
-                    root.commit_playback_speed_input_if_needed();
+                    root.commit_toolbar_inputs_if_needed();
                     root.show_editor_requested();
                 }
                 show_diagnostics_requested => {
-                    root.commit_playback_speed_input_if_needed();
+                    root.commit_toolbar_inputs_if_needed();
                     root.show_diagnostics_requested();
                 }
                 show_settings_requested => {
-                    root.commit_playback_speed_input_if_needed();
+                    root.commit_toolbar_inputs_if_needed();
                     root.show_settings_requested();
                 }
             }
 
-            Rectangle {
+            nav_bar_divider := Rectangle {
                 width: 1px;
                 vertical-stretch: 1;
                 background: Theme.divider;
             }
 
-            Rectangle {
+            main_content_area_container := Rectangle {
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
                 background: Theme.content-background;
@@ -230,43 +249,43 @@ export component AppWindow inherits Window {
                     has_invalid_recordings: root.has_invalid_recordings;
                     invalid_recordings_summary: root.invalid_recordings_summary;
                     refresh_library_requested => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.refresh_library_requested();
                     }
                     select_recording_requested(index) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.select_recording_requested(index);
                     }
                     delete_selected_recording_requested => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.delete_selected_recording_requested();
                     }
                     save_editor_changes_requested => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.save_editor_changes_requested();
                     }
                     revert_editor_changes_requested => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.revert_editor_changes_requested();
                     }
                     delete_visible_event_requested(index) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.delete_visible_event_requested(index);
                     }
                     filter_key_events_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.filter_key_events_requested(enabled);
                     }
                     filter_mouse_button_events_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.filter_mouse_button_events_requested(enabled);
                     }
                     filter_mouse_wheel_events_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.filter_mouse_wheel_events_requested(enabled);
                     }
                     filter_pointer_move_events_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.filter_pointer_move_events_requested(enabled);
                     }
                 }
@@ -281,7 +300,7 @@ export component AppWindow inherits Window {
                     playback_summary: root.playback_summary;
                     playback_checks: root.playback_checks;
                     refresh_diagnostics_requested => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.refresh_diagnostics_requested();
                     }
                 }
@@ -303,31 +322,31 @@ export component AppWindow inherits Window {
                     playback_controls_summary: root.playback_controls_summary;
                     selected_recording_details: root.selected_recording_details;
                     choose_raw_input_recording_requested => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.choose_raw_input_recording_requested();
                     }
                     choose_low_level_hooks_recording_requested => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.choose_low_level_hooks_recording_requested();
                     }
                     toggle_stop_hotkey_control_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.toggle_stop_hotkey_control_requested(enabled);
                     }
                     toggle_stop_hotkey_alt_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.toggle_stop_hotkey_alt_requested(enabled);
                     }
                     toggle_stop_hotkey_shift_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.toggle_stop_hotkey_shift_requested(enabled);
                     }
                     toggle_stop_hotkey_win_requested(enabled) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.toggle_stop_hotkey_win_requested(enabled);
                     }
                     select_stop_hotkey_key_requested(index) => {
-                        root.commit_playback_speed_input_if_needed();
+                        root.commit_toolbar_inputs_if_needed();
                         root.select_stop_hotkey_key_requested(index);
                     }
                 }
