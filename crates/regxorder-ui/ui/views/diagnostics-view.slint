@@ -1,6 +1,4 @@
-import { HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
-import { ActionButton } from "../components/action-button.slint";
-import { Theme } from "../theme.slint";
+import { Button, HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
 
 export component DiagnosticsView inherits Rectangle {
     in property <string> diagnostics_summary;
@@ -11,19 +9,15 @@ export component DiagnosticsView inherits Rectangle {
     in property <string> playback_checks;
     callback refresh_diagnostics_requested();
 
-    background: Theme.content-background;
-
     VerticalBox {
-        padding: 10px;
-        spacing: 10px;
+        padding: 4px;
+        spacing: 12px;
 
         HorizontalBox {
             spacing: 8px;
 
             Text {
                 text: "Diagnostics";
-                color: Theme.text-strong;
-                font-size: 18px;
             }
 
             Rectangle {
@@ -31,11 +25,12 @@ export component DiagnosticsView inherits Rectangle {
                 background: transparent;
             }
 
-            ActionButton {
-                width: 72px;
-                label: "Refresh";
+            Button {
+                text: "Refresh";
+                icon: @image-url("../../assets/icons/RefreshIcon.svg");
+                colorize-icon: true;
                 primary: true;
-                tapped => {
+                clicked => {
                     root.refresh_diagnostics_requested();
                 }
             }
@@ -43,62 +38,34 @@ export component DiagnosticsView inherits Rectangle {
 
         Text {
             text: root.diagnostics_summary;
-            color: Theme.text-muted;
-            font-size: 11px;
             wrap: word-wrap;
-        }
-
-        Rectangle {
-            width: parent.width;
-            height: 1px;
-            background: Theme.divider;
         }
 
         ScrollView {
             VerticalBox {
-                spacing: 10px;
+                spacing: 12px;
 
                 Text {
                     text: root.selected_recording_title;
-                    color: Theme.text-strong;
-                    font-size: 16px;
                     wrap: word-wrap;
                 }
 
                 Text {
                     text: root.selected_recording_details;
-                    color: Theme.text-subtle;
-                    font-size: 11px;
                     wrap: word-wrap;
-                }
-
-                Rectangle {
-                    height: 1px;
-                    background: Theme.divider;
                 }
 
                 Text {
                     text: root.playback_summary + "\n" + root.playback_checks;
-                    color: Theme.success-text;
-                    font-size: 11px;
                     wrap: word-wrap;
-                }
-
-                Rectangle {
-                    height: 1px;
-                    background: Theme.divider;
                 }
 
                 Text {
                     text: "Issues";
-                    color: Theme.text-strong;
-                    font-size: 14px;
                 }
 
                 Text {
                     text: root.diagnostics_checks;
-                    color: Theme.accent;
-                    font-size: 11px;
                     wrap: word-wrap;
                 }
             }

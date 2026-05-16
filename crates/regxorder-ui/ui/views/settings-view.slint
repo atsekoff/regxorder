@@ -1,8 +1,4 @@
-import { HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
-import { ActionButton } from "../components/action-button.slint";
-import { FlatSelect } from "../components/flat-select.slint";
-import { LabeledCheckBox } from "../components/labeled-check-box.slint";
-import { Theme } from "../theme.slint";
+import { Button, CheckBox, ComboBox, HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
 
 export component SettingsView inherits Rectangle {
     in property <string> settings_summary;
@@ -26,54 +22,39 @@ export component SettingsView inherits Rectangle {
     callback toggle_stop_hotkey_win_requested(enabled: bool);
     callback select_stop_hotkey_key_requested(index: int);
 
-    background: Theme.content-background;
-
     ScrollView {
         VerticalBox {
-            padding: 10px;
-            spacing: 10px;
+            padding: 4px;
+            spacing: 12px;
 
             Text {
                 text: "Settings";
-                color: Theme.text-strong;
-                font-size: 18px;
             }
 
             Text {
                 text: root.settings_summary;
-                color: Theme.text-muted;
-                font-size: 11px;
                 wrap: word-wrap;
-            }
-
-            Rectangle {
-                height: 1px;
-                background: Theme.divider;
             }
 
             Text {
                 text: "Recording Strategy";
-                color: Theme.text-strong;
-                font-size: 14px;
             }
 
             HorizontalBox {
                 spacing: 8px;
 
-                ActionButton {
-                    width: 118px;
-                    label: "Raw Input";
-                    selected: root.recording_strategy_raw_selected;
-                    tapped => {
+                Button {
+                    text: "Raw Input";
+                    primary: root.recording_strategy_raw_selected;
+                    clicked => {
                         root.choose_raw_input_recording_requested();
                     }
                 }
 
-                ActionButton {
-                    width: 146px;
-                    label: "Low-Level Hooks";
-                    selected: root.recording_strategy_low_level_selected;
-                    tapped => {
+                Button {
+                    text: "Low-Level Hooks";
+                    primary: root.recording_strategy_low_level_selected;
+                    clicked => {
                         root.choose_low_level_hooks_recording_requested();
                     }
                 }
@@ -81,61 +62,50 @@ export component SettingsView inherits Rectangle {
 
             Text {
                 text: root.session_directory;
-                color: Theme.text-muted;
-                font-size: 11px;
                 wrap: word-wrap;
-            }
-
-            Rectangle {
-                height: 1px;
-                background: Theme.divider;
             }
 
             Text {
                 text: "Stop Action Hotkey";
-                color: Theme.text-strong;
-                font-size: 14px;
             }
 
             Text {
                 text: root.stop_hotkey_summary;
-                color: Theme.text-muted;
-                font-size: 11px;
                 wrap: word-wrap;
             }
 
             HorizontalBox {
                 spacing: 12px;
 
-                LabeledCheckBox {
-                    label: "Ctrl";
+                CheckBox {
+                    text: "Ctrl";
                     checked: root.stop_hotkey_control_selected;
-                    toggled(checked) => {
-                        root.toggle_stop_hotkey_control_requested(checked);
+                    toggled => {
+                        root.toggle_stop_hotkey_control_requested(self.checked);
                     }
                 }
 
-                LabeledCheckBox {
-                    label: "Alt";
+                CheckBox {
+                    text: "Alt";
                     checked: root.stop_hotkey_alt_selected;
-                    toggled(checked) => {
-                        root.toggle_stop_hotkey_alt_requested(checked);
+                    toggled => {
+                        root.toggle_stop_hotkey_alt_requested(self.checked);
                     }
                 }
 
-                LabeledCheckBox {
-                    label: "Shift";
+                CheckBox {
+                    text: "Shift";
                     checked: root.stop_hotkey_shift_selected;
-                    toggled(checked) => {
-                        root.toggle_stop_hotkey_shift_requested(checked);
+                    toggled => {
+                        root.toggle_stop_hotkey_shift_requested(self.checked);
                     }
                 }
 
-                LabeledCheckBox {
-                    label: "Win";
+                CheckBox {
+                    text: "Win";
                     checked: root.stop_hotkey_win_selected;
-                    toggled(checked) => {
-                        root.toggle_stop_hotkey_win_requested(checked);
+                    toggled => {
+                        root.toggle_stop_hotkey_win_requested(self.checked);
                     }
                 }
             }
@@ -146,13 +116,11 @@ export component SettingsView inherits Rectangle {
                 Text {
                     vertical-alignment: center;
                     text: "Key";
-                    color: Theme.text-subtle;
-                    font-size: 12px;
                 }
 
-                FlatSelect {
+                ComboBox {
                     width: 120px;
-                    control_accessible_label: "Stop hotkey key";
+                    accessible-label: "Stop hotkey key";
                     model: [
                         "Escape",
                         "F1",
@@ -168,36 +136,25 @@ export component SettingsView inherits Rectangle {
                         "F11",
                         "F12"
                     ];
-                    selected_index: root.stop_hotkey_key_index;
-                    selected_label: root.stop_hotkey_key_label;
-                    selection_requested(index) => {
-                        root.select_stop_hotkey_key_requested(index);
+                    current-index: root.stop_hotkey_key_index;
+                    current-value: root.stop_hotkey_key_label;
+                    selected => {
+                        root.select_stop_hotkey_key_requested(self.current-index);
                     }
                 }
             }
 
-            Rectangle {
-                height: 1px;
-                background: Theme.divider;
-            }
-
             Text {
                 text: "Playback & Session";
-                color: Theme.text-strong;
-                font-size: 14px;
             }
 
             Text {
                 text: root.playback_controls_summary;
-                color: Theme.text-subtle;
-                font-size: 11px;
                 wrap: word-wrap;
             }
 
             Text {
                 text: root.selected_recording_details;
-                color: Theme.text-subtle;
-                font-size: 11px;
                 wrap: word-wrap;
             }
         }

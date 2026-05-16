@@ -1,17 +1,53 @@
-import { HorizontalBox, VerticalBox } from "std-widgets.slint";
-import { IconInputField } from "../components/icon-input-field.slint";
-import { IconButton } from "../components/icon-button.slint";
-import { Theme } from "../theme.slint";
+import { Button, HorizontalBox, LineEdit, VerticalBox } from "std-widgets.slint";
+
+component CommitLineEdit inherits LineEdit {
+    in property <bool> allow_decimal: false;
+    in property <string> field_accessible_label: "";
+    callback value_edited(value: string);
+    callback value_committed(value: string);
+
+    private property <bool> commit_on_focus_loss: true;
+
+    accessible-label: root.field_accessible_label;
+    horizontal-alignment: center;
+    input-type: root.allow_decimal ? decimal : number;
+
+    edited => {
+        root.value_edited(self.text);
+    }
+
+    accepted => {
+        self.commit_on_focus_loss = false;
+        root.value_committed(self.text);
+        self.clear-focus();
+    }
+
+    changed has-focus => {
+        if self.has-focus {
+            self.commit_on_focus_loss = true;
+        } else if self.commit_on_focus_loss {
+            root.value_committed(self.text);
+        } else {
+            self.commit_on_focus_loss = true;
+        }
+    }
+
+    public function commit_pending() {
+        if self.has-focus {
+            self.commit_on_focus_loss = false;
+            root.value_committed(self.text);
+            self.clear-focus();
+        }
+    }
+}
 
 export component ControlToolbar inherits Rectangle {
 
     public function commit_and_blur_toolbar_inputs() {
-        loop_control.commit_and_blur_input();
-        speed_control.commit_and_blur_input();
+        loop_control.commit_pending();
+        speed_control.commit_pending();
     }
 
-    property <length> input_icon_size: 22px;
-    property <length> input_box_height: 32px;
     in property <string> toolbar_status_label;
     in property <string> toolbar_file_label;
     in property <string> toolbar_detail_label;
@@ -30,92 +66,114 @@ export component ControlToolbar inherits Rectangle {
     callback playback_speed_input_edited(value: string);
     callback playback_speed_input_committed(value: string);
 
-    control_bar_container := GridLayout {
-        col_0_placeholder := HorizontalBox {
-            width: root.width / 3;
+    VerticalBox {
+        width: parent.width;
+        padding: 12px;
+        spacing: 10px;
+
+        Text {
+            text: root.toolbar_status_label;
+            wrap: word-wrap;
         }
 
-        control_buttons_container := HorizontalBox {
-            alignment: LayoutAlignment.center;
+        Text {
+            text: root.toolbar_file_label;
+            wrap: word-wrap;
+        }
 
-            width: root.width / 3;
-            record_button := IconButton {
+        Text {
+            text: root.toolbar_detail_label;
+            wrap: word-wrap;
+        }
+
+        HorizontalBox {
+            spacing: 8px;
+
+            record_button := Button {
                 icon: @image-url("../../assets/icons/RecordIcon_fill.svg");
-                control_accessible_label: "Start recording";
-                button_width: 32px;
-                button_height: 32px;
-                danger: root.can_start_recording;
+                colorize-icon: true;
+                accessible-label: "Start recording";
+                width: 40px;
+                height: 40px;
                 enabled: root.can_start_recording;
-                tapped => {
+                clicked => {
                     root.commit_and_blur_toolbar_inputs();
                     root.start_recording_requested();
                 }
             }
 
-            stop_button := IconButton {
+            stop_button := Button {
                 icon: @image-url("../../assets/icons/StopIcon_fill.svg");
-                control_accessible_label: "Stop active action";
-                button_width: 32px;
-                button_height: 32px;
-                selected: root.can_stop_active_action;
+                colorize-icon: true;
+                accessible-label: "Stop active action";
+                width: 40px;
+                height: 40px;
                 enabled: root.can_stop_active_action;
-                tapped => {
+                clicked => {
                     root.commit_and_blur_toolbar_inputs();
                     root.stop_active_action_requested();
                 }
             }
 
-            play_button := IconButton {
+            play_button := Button {
                 icon: @image-url("../../assets/icons/PlayIcon_fill.svg");
-                control_accessible_label: "Play selected session";
-                button_width: 32px;
-                button_height: 32px;
-                success: !root.can_stop_active_action && root.can_play_selected_recording;
+                colorize-icon: true;
+                accessible-label: "Play selected session";
+                width: 40px;
+                height: 40px;
                 enabled: root.can_play_selected_recording;
-                tapped => {
+                clicked => {
                     root.commit_and_blur_toolbar_inputs();
                     root.play_selected_recording_requested();
                 }
             }
-        }
 
-        control_config_container := HorizontalBox {
-            width: root.width / 3;
-            alignment: LayoutAlignment.end;
-            spacing: 10px;
-            loop_control := IconInputField {
-                icon: @image-url("../../assets/icons/LoopIcon.svg");
-                input_text: root.playback_loop_input_text;
-                input_accessible_label: "Playback loops";
-                background: #00000000;
+            Rectangle {
+                horizontal-stretch: 1;
+                background: transparent;
+            }
+
+            Text {
+                vertical-alignment: center;
+                text: "Loops";
+            }
+
+            loop_control := CommitLineEdit {
+                width: 96px;
+                text: root.playback_loop_input_text;
+                field_accessible_label: "Playback loops";
                 enabled: !root.can_stop_active_action;
-                icon_size: root.input_icon_size;
-                input_spacing: 2px;
-                input_box_height: root.input_box_height;
-                input_edited(value) => {
+                value_edited(value) => {
                     root.playback_loop_input_edited(value);
                 }
-                input_committed(value) => {
+                value_committed(value) => {
                     root.playback_loop_input_committed(value);
                 }
             }
 
-            speed_control := IconInputField {
-                icon: @image-url("../../assets/icons/ChronometerSpeedIcon.svg");
-                input_text: root.playback_speed_input_text;
-                input_accessible_label: "Playback speed";
+            Text {
+                vertical-alignment: center;
+                text: "Speed";
+            }
+
+            speed_control := CommitLineEdit {
+                width: 96px;
+                text: root.playback_speed_input_text;
+                field_accessible_label: "Playback speed";
                 enabled: !root.can_stop_active_action;
                 allow_decimal: true;
-                icon_size: root.input_icon_size;
-                input_box_width: 38px;
-                input_box_height: root.input_box_height;
-                input_edited(value) => {
+                value_edited(value) => {
                     root.playback_speed_input_edited(value);
                 }
-                input_committed(value) => {
+                value_committed(value) => {
                     root.playback_speed_input_committed(value);
                 }
             }
+        }
+
+        if root.playback_speed_validation_message != "": Text {
+            text: root.playback_speed_validation_message;
+            wrap: word-wrap;
         }
     }
 }

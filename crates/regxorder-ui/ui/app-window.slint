@@ -1,16 +1,13 @@
-import { HorizontalBox, VerticalBox } from "std-widgets.slint";
-import { Theme } from "theme.slint";
+import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
 import { ControlToolbar } from "views/control-toolbar.slint";
-import { SidebarNav } from "views/sidebar-nav.slint";
 import { EditorView } from "views/editor-view.slint";
 import { DiagnosticsView } from "views/diagnostics-view.slint";
 import { SettingsView } from "views/settings-view.slint";
 
 export component AppWindow inherits Window {
     title: "regxorder";
-    width: 560px;
-    height: 540px;
-    background: Theme.window-background;
+    width: 720px;
+    height: 620px;
 
     in-out property <string> toolbar_status_label: "Status: Idle";
     in-out property <string> toolbar_file_label: "File: No session";
@@ -135,12 +132,10 @@ export component AppWindow inherits Window {
     }
 
     app_container := VerticalBox {
-        padding: Theme.shell-padding;
-        spacing: 0px;
+        padding: 12px;
+        spacing: 12px;
 
         control_toolbar := ControlToolbar {
-            min-height: 48px;
-            max-height: 48px;
             horizontal-stretch: 1;
             toolbar_status_label: root.toolbar_status_label;
             toolbar_file_label: root.toolbar_file_label;
@@ -175,180 +170,178 @@ export component AppWindow inherits Window {
             }
         }
 
-        divider := Rectangle {
-            horizontal-stretch: 1;
-            height: 1px;
-            background: Theme.divider;
-        }
+        HorizontalBox {
+            spacing: 8px;
 
-        bottom_container := HorizontalBox {
-            padding: 0px;
-            spacing: 0px;
-            vertical-stretch: 1;
-
-            SidebarNav {
-                vertical-stretch: 1;
-                editor_tab_selected: root.editor_tab_selected;
-                diagnostics_tab_selected: root.diagnostics_tab_selected;
-                settings_tab_selected: root.settings_tab_selected;
-                show_editor_requested => {
+            Button {
+                text: "Editor";
+                primary: root.editor_tab_selected;
+                clicked => {
                     root.commit_toolbar_inputs_if_needed();
                     root.show_editor_requested();
                 }
-                show_diagnostics_requested => {
+            }
+
+            Button {
+                text: "Diagnostics";
+                primary: root.diagnostics_tab_selected;
+                clicked => {
                     root.commit_toolbar_inputs_if_needed();
                     root.show_diagnostics_requested();
                 }
-                show_settings_requested => {
+            }
+
+            Button {
+                text: "Settings";
+                primary: root.settings_tab_selected;
+                clicked => {
                     root.commit_toolbar_inputs_if_needed();
                     root.show_settings_requested();
                 }
             }
 
-            nav_bar_divider := Rectangle {
-                width: 1px;
-                vertical-stretch: 1;
-                background: Theme.divider;
+            Rectangle {
+                horizontal-stretch: 1;
+                background: transparent;
             }
+        }
 
-            main_content_area_container := Rectangle {
+        main_content_area_container := Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+
+            if root.show_editor_view: EditorView {
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
-                background: Theme.content-background;
-
-                if root.show_editor_view: EditorView {
-                    horizontal-stretch: 1;
-                    vertical-stretch: 1;
-                    session_directory: root.session_directory;
-                    library_summary: root.library_summary;
-                    has_recordings: root.has_recordings;
-                    recording_titles: root.recording_titles;
-                    selected_recording_index: root.selected_recording_index;
-                    selected_recording_title: root.selected_recording_title;
-                    editor_summary: root.editor_summary;
-                    event_index_labels: root.event_index_labels;
-                    event_type_labels: root.event_type_labels;
-                    event_parameter_labels: root.event_parameter_labels;
-                    event_duration_labels: root.event_duration_labels;
-                    can_delete_visible_events: root.can_delete_visible_events;
-                    filter_key_events_selected: root.filter_key_events_selected;
-                    filter_mouse_button_events_selected: root.filter_mouse_button_events_selected;
-                    filter_mouse_wheel_events_selected: root.filter_mouse_wheel_events_selected;
-                    filter_pointer_move_events_selected: root.filter_pointer_move_events_selected;
-                    filter_key_event_count_label: root.filter_key_event_count_label;
-                    filter_mouse_button_event_count_label: root.filter_mouse_button_event_count_label;
-                    filter_mouse_wheel_event_count_label: root.filter_mouse_wheel_event_count_label;
-                    filter_pointer_move_event_count_label: root.filter_pointer_move_event_count_label;
-                    can_save_editor_changes: root.can_save_editor_changes;
-                    can_revert_editor_changes: root.can_revert_editor_changes;
-                    can_delete_selected_recording: root.can_delete_selected_recording;
-                    selected_recording_details: root.selected_recording_details;
-                    playback_execution_status: root.playback_execution_status;
-                    playback_summary: root.playback_summary;
-                    playback_checks: root.playback_checks;
-                    has_invalid_recordings: root.has_invalid_recordings;
-                    invalid_recordings_summary: root.invalid_recordings_summary;
-                    refresh_library_requested => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.refresh_library_requested();
-                    }
-                    select_recording_requested(index) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.select_recording_requested(index);
-                    }
-                    delete_selected_recording_requested => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.delete_selected_recording_requested();
-                    }
-                    save_editor_changes_requested => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.save_editor_changes_requested();
-                    }
-                    revert_editor_changes_requested => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.revert_editor_changes_requested();
-                    }
-                    delete_visible_event_requested(index) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.delete_visible_event_requested(index);
-                    }
-                    filter_key_events_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.filter_key_events_requested(enabled);
-                    }
-                    filter_mouse_button_events_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.filter_mouse_button_events_requested(enabled);
-                    }
-                    filter_mouse_wheel_events_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.filter_mouse_wheel_events_requested(enabled);
-                    }
-                    filter_pointer_move_events_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.filter_pointer_move_events_requested(enabled);
-                    }
+                session_directory: root.session_directory;
+                library_summary: root.library_summary;
+                has_recordings: root.has_recordings;
+                recording_titles: root.recording_titles;
+                selected_recording_index: root.selected_recording_index;
+                selected_recording_title: root.selected_recording_title;
+                editor_summary: root.editor_summary;
+                event_index_labels: root.event_index_labels;
+                event_type_labels: root.event_type_labels;
+                event_parameter_labels: root.event_parameter_labels;
+                event_duration_labels: root.event_duration_labels;
+                can_delete_visible_events: root.can_delete_visible_events;
+                filter_key_events_selected: root.filter_key_events_selected;
+                filter_mouse_button_events_selected: root.filter_mouse_button_events_selected;
+                filter_mouse_wheel_events_selected: root.filter_mouse_wheel_events_selected;
+                filter_pointer_move_events_selected: root.filter_pointer_move_events_selected;
+                filter_key_event_count_label: root.filter_key_event_count_label;
+                filter_mouse_button_event_count_label: root.filter_mouse_button_event_count_label;
+                filter_mouse_wheel_event_count_label: root.filter_mouse_wheel_event_count_label;
+                filter_pointer_move_event_count_label: root.filter_pointer_move_event_count_label;
+                can_save_editor_changes: root.can_save_editor_changes;
+                can_revert_editor_changes: root.can_revert_editor_changes;
+                can_delete_selected_recording: root.can_delete_selected_recording;
+                selected_recording_details: root.selected_recording_details;
+                playback_execution_status: root.playback_execution_status;
+                playback_summary: root.playback_summary;
+                playback_checks: root.playback_checks;
+                has_invalid_recordings: root.has_invalid_recordings;
+                invalid_recordings_summary: root.invalid_recordings_summary;
+                refresh_library_requested => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.refresh_library_requested();
                 }
-
-                if root.show_diagnostics_view: DiagnosticsView {
-                    horizontal-stretch: 1;
-                    vertical-stretch: 1;
-                    diagnostics_summary: root.diagnostics_summary;
-                    diagnostics_checks: root.diagnostics_checks;
-                    selected_recording_title: root.selected_recording_title;
-                    selected_recording_details: root.selected_recording_details;
-                    playback_summary: root.playback_summary;
-                    playback_checks: root.playback_checks;
-                    refresh_diagnostics_requested => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.refresh_diagnostics_requested();
-                    }
+                select_recording_requested(index) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.select_recording_requested(index);
                 }
+                delete_selected_recording_requested => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.delete_selected_recording_requested();
+                }
+                save_editor_changes_requested => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.save_editor_changes_requested();
+                }
+                revert_editor_changes_requested => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.revert_editor_changes_requested();
+                }
+                delete_visible_event_requested(index) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.delete_visible_event_requested(index);
+                }
+                filter_key_events_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.filter_key_events_requested(enabled);
+                }
+                filter_mouse_button_events_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.filter_mouse_button_events_requested(enabled);
+                }
+                filter_mouse_wheel_events_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.filter_mouse_wheel_events_requested(enabled);
+                }
+                filter_pointer_move_events_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.filter_pointer_move_events_requested(enabled);
+                }
+            }
 
-                if root.show_settings_view: SettingsView {
-                    horizontal-stretch: 1;
-                    vertical-stretch: 1;
-                    settings_summary: root.settings_summary;
-                    recording_strategy_raw_selected: root.recording_strategy_raw_selected;
-                    recording_strategy_low_level_selected: root.recording_strategy_low_level_selected;
-                    session_directory: root.session_directory;
-                    stop_hotkey_summary: root.stop_hotkey_summary;
-                    stop_hotkey_control_selected: root.stop_hotkey_control_selected;
-                    stop_hotkey_alt_selected: root.stop_hotkey_alt_selected;
-                    stop_hotkey_shift_selected: root.stop_hotkey_shift_selected;
-                    stop_hotkey_win_selected: root.stop_hotkey_win_selected;
-                    stop_hotkey_key_index: root.stop_hotkey_key_index;
-                    stop_hotkey_key_label: root.stop_hotkey_key_label;
-                    playback_controls_summary: root.playback_controls_summary;
-                    selected_recording_details: root.selected_recording_details;
-                    choose_raw_input_recording_requested => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.choose_raw_input_recording_requested();
-                    }
-                    choose_low_level_hooks_recording_requested => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.choose_low_level_hooks_recording_requested();
-                    }
-                    toggle_stop_hotkey_control_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.toggle_stop_hotkey_control_requested(enabled);
-                    }
-                    toggle_stop_hotkey_alt_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.toggle_stop_hotkey_alt_requested(enabled);
-                    }
-                    toggle_stop_hotkey_shift_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.toggle_stop_hotkey_shift_requested(enabled);
-                    }
-                    toggle_stop_hotkey_win_requested(enabled) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.toggle_stop_hotkey_win_requested(enabled);
-                    }
-                    select_stop_hotkey_key_requested(index) => {
-                        root.commit_toolbar_inputs_if_needed();
-                        root.select_stop_hotkey_key_requested(index);
-                    }
+            if root.show_diagnostics_view: DiagnosticsView {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                diagnostics_summary: root.diagnostics_summary;
+                diagnostics_checks: root.diagnostics_checks;
+                selected_recording_title: root.selected_recording_title;
+                selected_recording_details: root.selected_recording_details;
+                playback_summary: root.playback_summary;
+                playback_checks: root.playback_checks;
+                refresh_diagnostics_requested => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.refresh_diagnostics_requested();
+                }
+            }
+
+            if root.show_settings_view: SettingsView {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                settings_summary: root.settings_summary;
+                recording_strategy_raw_selected: root.recording_strategy_raw_selected;
+                recording_strategy_low_level_selected: root.recording_strategy_low_level_selected;
+                session_directory: root.session_directory;
+                stop_hotkey_summary: root.stop_hotkey_summary;
+                stop_hotkey_control_selected: root.stop_hotkey_control_selected;
+                stop_hotkey_alt_selected: root.stop_hotkey_alt_selected;
+                stop_hotkey_shift_selected: root.stop_hotkey_shift_selected;
+                stop_hotkey_win_selected: root.stop_hotkey_win_selected;
+                stop_hotkey_key_index: root.stop_hotkey_key_index;
+                stop_hotkey_key_label: root.stop_hotkey_key_label;
+                playback_controls_summary: root.playback_controls_summary;
+                selected_recording_details: root.selected_recording_details;
+                choose_raw_input_recording_requested => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.choose_raw_input_recording_requested();
+                }
+                choose_low_level_hooks_recording_requested => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.choose_low_level_hooks_recording_requested();
+                }
+                toggle_stop_hotkey_control_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.toggle_stop_hotkey_control_requested(enabled);
+                }
+                toggle_stop_hotkey_alt_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.toggle_stop_hotkey_alt_requested(enabled);
+                }
+                toggle_stop_hotkey_shift_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.toggle_stop_hotkey_shift_requested(enabled);
+                }
+                toggle_stop_hotkey_win_requested(enabled) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.toggle_stop_hotkey_win_requested(enabled);
+                }
+                select_stop_hotkey_key_requested(index) => {
+                    root.commit_toolbar_inputs_if_needed();
+                    root.select_stop_hotkey_key_requested(index);
                 }
             }
         }
