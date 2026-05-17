@@ -1,0 +1,72 @@
+import { AppPalette } from "../theme.slint";
+export component CompactInputField inherits Rectangle {
+    in property <bool> allow_decimal: false;
+    in property <bool> enabled: true;
+    in property <string> field_accessible_label: "";
+    in-out property <string> text: "";
+    in property <length> field_width: 48px;
+    in property <length> field_height: 32px;
+    callback value_edited(value: string);
+    callback value_committed(value: string);
+
+    private property <bool> commit_on_focus_loss: true;
+
+    width: root.field_width;
+    height: root.field_height;
+    border-width: 1px;
+    border-radius: 6px;
+    border-color: text_input.has-focus ? AppPalette.primary-main : AppPalette.border;
+    clip: true;
+    forward-focus: text_input;
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: text_input.enabled;
+        clicked => {
+            text_input.focus();
+            text_input.select-all();
+        }
+    }
+
+    text_input := TextInput {
+        text <=> root.text;
+        enabled: root.enabled;
+        accessible-label: root.field_accessible_label;
+        color: AppPalette.on-primary;
+        input-type: root.allow_decimal ? decimal : number;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        single-line: true;
+        selection-background-color: #7bc8ff;
+        selection-foreground-color: #13202c;
+
+        edited => {
+            root.value_edited(self.text);
+        }
+
+        accepted => {
+            root.commit_on_focus_loss = false;
+            root.value_committed(self.text);
+            self.clear-focus();
+        }
+
+        changed has-focus => {
+            if self.has-focus {
+                root.commit_on_focus_loss = true;
+            } else if root.commit_on_focus_loss {
+                root.value_committed(self.text);
+            } else {
+                root.commit_on_focus_loss = true;
+            }
+        }
+    }
+
+    public function commit_pending() {
+        if text_input.has-focus {
+            root.commit_on_focus_loss = false;
+            root.value_committed(text_input.text);
+            text_input.clear-focus();
+        }
+    }
+}

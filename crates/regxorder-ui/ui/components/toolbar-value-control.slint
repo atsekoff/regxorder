@@ -1,0 +1,55 @@
+import { AppPalette } from "../theme.slint";
+import { HorizontalBox } from "std-widgets.slint";
+import { CompactInputField } from "compact-input-field.slint";
+
+export component ToolbarValueControl inherits Rectangle {
+
+    public function commit_pending() {
+        input_field.commit_pending();
+    }
+
+    in property <image> icon;
+    in property <bool> enabled: true;
+    in property <bool> allow_decimal: false;
+    in property <string> text: "";
+    in property <length> icon_size: 20px;
+    in property <length> field_width: 40px;
+    in property <length> field_height: 30px;
+    in property <length> spacing: 6px;
+    callback value_edited(value: string);
+    callback value_committed(value: string);
+
+    forward-focus: input_field;
+
+    HorizontalLayout {
+        spacing: root.spacing;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: root.icon;
+                image-fit: fill;
+                width: root.icon_size;
+                height: root.icon_size;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                colorize: white;
+            }
+        }
+
+        input_field := CompactInputField {
+            field_width: root.field_width;
+            field_height: root.field_height;
+            text: root.text;
+            enabled: root.enabled;
+            allow_decimal: root.allow_decimal;
+            value_edited(value) => {
+                root.value_edited(value);
+            }
+            value_committed(value) => {
+                root.value_committed(value);
+            }
+        }
+    }
+}

@@ -1,7 +1,17 @@
-import { Button, CheckBox, ComboBox, HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
-import { EventRow } from "../components/event-row.slint";
+import {
+    Button,
+    ComboBox,
+    HorizontalBox,
+    ScrollView,
+    VerticalBox,
+} from "std-widgets.slint";
+import { SquareIconButton } from "../components/square-icon-button.slint";
+import { SessionControlsStyle } from "editor-view.style.slint";
+import { AppPalette } from "../theme.slint";
+import { TableView } from "../components/table-view.slint";
 
 export component EditorView inherits Rectangle {
+
     in property <string> session_directory;
     in property <string> library_summary;
     in property <bool> has_recordings: false;
@@ -42,39 +52,26 @@ export component EditorView inherits Rectangle {
     callback filter_mouse_wheel_events_requested(enabled: bool);
     callback filter_pointer_move_events_requested(enabled: bool);
 
-    VerticalBox {
-        width: parent.width;
-        height: parent.height;
+    VerticalLayout {
+        alignment: LayoutAlignment.stretch;
         padding: 4px;
-        spacing: 12px;
+        spacing: 4px;
 
-        Text {
-            text: root.editor_summary;
-            wrap: word-wrap;
-        }
+        session_controls := HorizontalLayout {
+            alignment: LayoutAlignment.end;
+            spacing: 4px;
 
-        if root.has_invalid_recordings: Text {
-            text: root.invalid_recordings_summary;
-            wrap: word-wrap;
-        }
-
-        HorizontalBox {
-            spacing: 8px;
-
-            Button {
-                text: "Refresh";
+            SquareIconButton {
                 icon: @image-url("../../assets/icons/RefreshIcon.svg");
-                colorize-icon: true;
-                primary: true;
+                size: SessionControlsStyle.button_size;
                 clicked => {
                     root.refresh_library_requested();
                 }
             }
 
             ComboBox {
-                width: 220px;
                 enabled: root.has_recordings;
-                accessible-label: "Selected session";
+                height: SessionControlsStyle.combo_box_height;
                 model: root.recording_titles;
                 current-index: root.selected_recording_index < 0 ? 0 : root.selected_recording_index;
                 current-value: root.selected_recording_title;
@@ -83,140 +80,99 @@ export component EditorView inherits Rectangle {
                 }
             }
 
-            Button {
-                text: "Save";
+            SquareIconButton {
                 icon: @image-url("../../assets/icons/CheckIcon.svg");
-                colorize-icon: true;
+                size: SessionControlsStyle.button_size;
                 enabled: root.can_save_editor_changes;
                 clicked => {
                     root.save_editor_changes_requested();
                 }
             }
 
-            Button {
-                text: "Revert";
+            SquareIconButton {
                 icon: @image-url("../../assets/icons/CancelIcon.svg");
-                colorize-icon: true;
+                size: SessionControlsStyle.button_size;
                 enabled: root.can_revert_editor_changes;
                 clicked => {
                     root.revert_editor_changes_requested();
                 }
             }
 
-            Button {
-                text: "Delete Session";
+            SquareIconButton {
                 icon: @image-url("../../assets/icons/DeleteIcon.svg");
-                colorize-icon: true;
+                size: SessionControlsStyle.button_size;
                 enabled: root.can_delete_selected_recording;
                 clicked => {
                     root.delete_selected_recording_requested();
                 }
             }
-
-            Rectangle {
-                horizontal-stretch: 1;
-                background: transparent;
-            }
         }
 
-        HorizontalBox {
-            spacing: 12px;
+        filter_buttons := HorizontalLayout {
+            spacing: 4px;
 
-            CheckBox {
-                text: "Keyboard (" + root.filter_key_event_count_label + ")";
-                checked: root.filter_key_events_selected;
-                toggled => {
-                    root.filter_key_events_requested(self.checked);
+            Button {
+                icon: @image-url("../../assets/icons/KeyboardIcon.svg");
+                colorize-icon: true;
+                text: root.filter_key_event_count_label;
+                primary: root.filter_key_events_selected;
+                height: SessionControlsStyle.button_size;
+                clicked => {
+                    root.filter_key_events_requested(!root.filter_key_events_selected);
                 }
             }
 
-            CheckBox {
-                text: "Mouse Buttons (" + root.filter_mouse_button_event_count_label + ")";
-                checked: root.filter_mouse_button_events_selected;
-                toggled => {
-                    root.filter_mouse_button_events_requested(self.checked);
+            Button {
+                icon: @image-url("../../assets/icons/MouseButtonIcon.svg");
+                colorize-icon: true;
+                text: root.filter_mouse_button_event_count_label;
+                primary: root.filter_mouse_button_events_selected;
+                height: SessionControlsStyle.button_size;
+                clicked => {
+                    root.filter_mouse_button_events_requested(!root.filter_mouse_button_events_selected);
                 }
             }
 
-            CheckBox {
-                text: "Mouse Wheel (" + root.filter_mouse_wheel_event_count_label + ")";
-                checked: root.filter_mouse_wheel_events_selected;
-                toggled => {
-                    root.filter_mouse_wheel_events_requested(self.checked);
+            Button {
+                icon: @image-url("../../assets/icons/MouseScrollWheelIcon.svg");
+                colorize-icon: true;
+                text: root.filter_mouse_wheel_event_count_label;
+                primary: root.filter_mouse_wheel_events_selected;
+                height: SessionControlsStyle.button_size;
+                clicked => {
+                    root.filter_mouse_wheel_events_requested(!root.filter_mouse_wheel_events_selected);
                 }
             }
 
-            CheckBox {
-                text: "Pointer Move (" + root.filter_pointer_move_event_count_label + ")";
-                checked: root.filter_pointer_move_events_selected;
-                toggled => {
-                    root.filter_pointer_move_events_requested(self.checked);
+            Button {
+                icon: @image-url("../../assets/icons/MouseMoveIcon.svg");
+                colorize-icon: true;
+                text: root.filter_pointer_move_event_count_label;
+                primary: root.filter_pointer_move_events_selected;
+                height: SessionControlsStyle.button_size;
+                clicked => {
+                    root.filter_pointer_move_events_requested(!root.filter_pointer_move_events_selected);
                 }
             }
         }
 
-        Text {
-            text: root.selected_recording_title;
-            wrap: word-wrap;
-        }
-
-        Text {
-            text: root.selected_recording_details;
-            wrap: word-wrap;
-        }
-
-        VerticalBox {
+        TableView {
+            border-width: 1px;
+            border-color: AppPalette.border;
             vertical-stretch: 1;
-            spacing: 8px;
+            horizontal-stretch: 1;
 
-            HorizontalBox {
-                spacing: 10px;
-
-                Text {
-                    width: 42px;
-                    text: "#";
-                }
-
-                Text {
-                    width: 110px;
-                    text: "Type";
-                }
-
-                Text {
-                    horizontal-stretch: 1;
-                    text: "Parameters";
-                }
-
-                Text {
-                    width: 92px;
-                    text: "Duration";
-                }
-
-                Text {
-                    width: 72px;
-                    text: "Action";
-                }
-            }
-
-            ScrollView {
-                vertical-stretch: 1;
-
-                VerticalBox {
-                    padding: 0px;
-                    spacing: 0px;
-
-                    for index_label[index] in root.event_index_labels: EventRow {
-                        index_label: index_label;
-                        type_label: root.event_type_labels[index];
-                        parameter_label: root.event_parameter_labels[index];
-                        duration_label: root.event_duration_labels[index];
-                        delete_enabled: root.can_delete_visible_events;
-                        delete_requested => {
-                            root.delete_visible_event_requested(index);
-                        }
-                    }
-                }
-            }
+            cols: [
+                { header: "#", values: root.event_index_labels, width: 42px, resizable: true },
+                { header: "Type", values: root.event_type_labels, width: 100px, resizable: true },
+                {
+                    header: "Parameters",
+                    values: root.event_parameter_labels,
+                    width: 100px,
+                    resizable: true
+                },
+                { header: "Duration", values: root.event_duration_labels, width: 100px, resizable: true },
+            ];
         }
     }
 }

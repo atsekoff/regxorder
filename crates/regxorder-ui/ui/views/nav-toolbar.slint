@@ -1,0 +1,49 @@
+
+import { SquareIconButton } from "../components/square-icon-button.slint";
+import { NavToolbarStyle } from "nav-toolbar.style.slint";
+
+export component NavToolbar inherits Rectangle {
+    in property <bool> editor_tab_selected: true;
+    in property <bool> diagnostics_tab_selected: false;
+    in property <bool> settings_tab_selected: false;
+    callback show_editor_requested();
+    callback show_diagnostics_requested();
+    callback show_settings_requested();
+
+    width: NavToolbarStyle.toolbar_width;
+    vertical-stretch: 1;
+
+    HorizontalLayout {
+        alignment: LayoutAlignment.center;
+
+        VerticalLayout {
+            padding-top: NavToolbarStyle.button_spacing;
+            spacing: NavToolbarStyle.button_spacing;
+            alignment: LayoutAlignment.start;
+
+            SquareIconButton {
+                icon: @image-url("../../assets/icons/EditIcon.svg");
+                size: NavToolbarStyle.button_size;
+                clicked => {
+                    root.show_editor_requested();
+                }
+            }
+
+            SquareIconButton {
+                icon: @image-url("../../assets/icons/DiagnosticIcon.svg");
+                size: NavToolbarStyle.button_size;
+                clicked => {
+                    root.show_diagnostics_requested();
+                }
+            }
+
+            SquareIconButton {
+                icon: @image-url("../../assets/icons/SettingsIcon.svg");
+                size: NavToolbarStyle.button_size;
+                clicked => {
+                    root.show_settings_requested();
+                }
+            }
+        }
+    }
+}

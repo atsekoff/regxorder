@@ -1,0 +1,64 @@
+import { ListView } from "std-widgets.slint";
+import { TableViewRow } from "table-view-row.slint";
+import { TableViewColumnData } from "table-view-types.slint";
+import { TableViewStyle, ColumnDividerStyle } from "table-view.style.slint";
+import { AppPalette } from "../theme.slint";
+
+export component TableView inherits Rectangle {
+    in property <[TableViewColumnData]> cols: [];
+
+    VerticalLayout {
+
+        header := HorizontalLayout {
+
+            for col[idx] in root.cols: HorizontalLayout {
+                property <length> col_min_width: col.min_width == 0 ? TableViewStyle.default_col_min_width : col.min_width;
+                property <length> col_max_width: col.max_width == 0 ? TableViewStyle.default_col_max_width : col.max_width;
+                property <length> col_width: col.width == 0 ? TableViewStyle.default_col_width : col.width;
+                width: col_width;
+
+                Text {
+                    overflow: TextOverflow.elide;
+                    text: col.header;
+                }
+
+                column_divider := Rectangle {
+                    width: ColumnDividerStyle.width;
+                    background: AppPalette.border;
+
+                    if (col.resizable): resize_touch_area := TouchArea {
+                        width: ColumnDividerStyle.touch_area_width;
+
+                        moved => {
+                            if (self.pressed) {
+                                col.width += (self.mouse-x - self.pressed-x);
+                                if (col.width < col_min_width) {
+                                    col.width = col_min_width;
+                                }
+                                if (col.width > col_max_width) {
+                                    col.width = col_max_width;
+                                }
+                            }
+                        }
+
+                        mouse-cursor: MouseCursor.ew-resize;
+                    }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                background: transparent;
+            }
+        }
+
+        ListView {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            for row[row_index] in root.cols[0].values: TableViewRow {
+                cols: root.cols;
+                row_index: row_index;
+            }
+        }
+    }
+}

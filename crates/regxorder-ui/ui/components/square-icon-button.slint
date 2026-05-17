@@ -1,0 +1,64 @@
+
+import { AppPalette } from "../theme.slint";
+import { Button } from "std-widgets.slint";
+
+export component SquareIconButton inherits Rectangle {
+
+    function get_background_color() -> color {
+        if (!root.enabled) {
+            return root.button_color.mix(grey, 30%);
+        }
+        if (touch_area.pressed) {
+            return root.button_color.darker(30%);
+        }
+        if (touch_area.has-hover) {
+            return root.button_color.brighter(30%);
+        }
+        return root.button_color;
+    }
+
+    function get_icon_color() -> color {
+        if (!root.enabled) {
+            return root.icon_color.mix(grey, 30%);
+        }
+        if (touch_area.pressed) {
+            return root.icon_color.darker(30%);
+        }
+        if (touch_area.has-hover) {
+            return root.icon_color.brighter(30%);
+        }
+        return root.icon_color;
+    }
+
+    in property <image> icon;
+    in property <bool> enabled: true;
+    in property <length> size: 24px;
+    in property <percent> image_size_percentage: 75%;
+    in property <duration> animation_duration: 150ms;
+    in property <color> button_color: AppPalette.primary-main;
+    in property <color> icon_color: AppPalette.primary-contrast;
+    callback clicked();
+
+    width: root.size;
+    height: root.size;
+    border-radius: 5px;
+    border-width: 1px;
+    border-color: root.icon_color;
+    background: get_background_color();
+    animate background { duration: root.animation_duration; }
+
+    touch_area := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    Image {
+        source: root.icon;
+        width: root.size * root.image_size_percentage;
+        height: root.size * root.image_size_percentage;
+        colorize: get_icon_color();
+        animate colorize { duration: root.animation_duration; }
+    }
+}

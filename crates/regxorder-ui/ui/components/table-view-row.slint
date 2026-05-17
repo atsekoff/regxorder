@@ -1,0 +1,41 @@
+import { AppPalette } from "../theme.slint";
+import { TableViewStyle } from "table-view.style.slint";
+import { TableViewColumnData } from "table-view-types.slint";
+
+export component TableViewRow inherits Rectangle {
+    in property <[TableViewColumnData]> cols: [];
+    in property <int> row_index: 0;
+
+    height: 40px;
+
+    HorizontalLayout {
+        spacing: 0px;
+
+        for col[idx] in root.cols: Rectangle {
+            property <length> col_width: col.width == 0 ? TableViewStyle.default_col_width : col.width;
+            width: col_width;
+            height: parent.height;
+            background: transparent;
+            clip: true;
+
+            Text {
+                horizontal-alignment: TextHorizontalAlignment.left;
+                vertical-alignment: TextVerticalAlignment.bottom;
+                overflow: TextOverflow.elide;
+                text: col.values[root.row_index];
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: AppPalette.border;
+    }
+}

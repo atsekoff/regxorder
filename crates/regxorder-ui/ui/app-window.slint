@@ -1,13 +1,16 @@
-import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox } from "std-widgets.slint";
 import { ControlToolbar } from "views/control-toolbar.slint";
+import { NavToolbar } from "views/nav-toolbar.slint";
 import { EditorView } from "views/editor-view.slint";
 import { DiagnosticsView } from "views/diagnostics-view.slint";
 import { SettingsView } from "views/settings-view.slint";
+import { AppStyle } from "app-window.style.slint";
+import { AppPalette } from "theme.slint";
 
 export component AppWindow inherits Window {
-    title: "regxorder";
-    width: 720px;
-    height: 620px;
+    title: AppStyle.app_name;
+    width: AppStyle.app_width;
+    height: AppStyle.app_height;
 
     in-out property <string> toolbar_status_label: "Status: Idle";
     in-out property <string> toolbar_file_label: "File: No session";
@@ -131,12 +134,10 @@ export component AppWindow inherits Window {
         }
     }
 
-    app_container := VerticalBox {
-        padding: 12px;
-        spacing: 12px;
+    app_container := VerticalLayout {
+        alignment: LayoutAlignment.stretch;
 
         control_toolbar := ControlToolbar {
-            horizontal-stretch: 1;
             toolbar_status_label: root.toolbar_status_label;
             toolbar_file_label: root.toolbar_file_label;
             toolbar_detail_label: root.toolbar_detail_label;
@@ -170,49 +171,44 @@ export component AppWindow inherits Window {
             }
         }
 
-        HorizontalBox {
-            spacing: 8px;
+        control_toolbar_divider := Rectangle {
+            horizontal-stretch: 1;
+            height: 1px;
+            background: AppPalette.border;
+        }
 
-            Button {
-                text: "Editor";
-                primary: root.editor_tab_selected;
-                clicked => {
+        bottom_container := HorizontalLayout {
+            alignment: LayoutAlignment.stretch;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+
+            NavToolbar {
+                editor_tab_selected: root.editor_tab_selected;
+                diagnostics_tab_selected: root.diagnostics_tab_selected;
+                settings_tab_selected: root.settings_tab_selected;
+                show_editor_requested => {
                     root.commit_toolbar_inputs_if_needed();
                     root.show_editor_requested();
                 }
-            }
-
-            Button {
-                text: "Diagnostics";
-                primary: root.diagnostics_tab_selected;
-                clicked => {
+                show_diagnostics_requested => {
                     root.commit_toolbar_inputs_if_needed();
                     root.show_diagnostics_requested();
                 }
-            }
-
-            Button {
-                text: "Settings";
-                primary: root.settings_tab_selected;
-                clicked => {
+                show_settings_requested => {
                     root.commit_toolbar_inputs_if_needed();
                     root.show_settings_requested();
                 }
             }
 
-            Rectangle {
-                horizontal-stretch: 1;
-                background: transparent;
+            nav_bar_divider := Rectangle {
+                width: 1px;
+                vertical-stretch: 1;
+                background: AppPalette.border;
             }
-        }
-
-        main_content_area_container := Rectangle {
-            horizontal-stretch: 1;
-            vertical-stretch: 1;
 
             if root.show_editor_view: EditorView {
-                horizontal-stretch: 1;
                 vertical-stretch: 1;
+                horizontal-stretch: 1;
                 session_directory: root.session_directory;
                 library_summary: root.library_summary;
                 has_recordings: root.has_recordings;
