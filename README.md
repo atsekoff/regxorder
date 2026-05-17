@@ -142,6 +142,8 @@ GitHub Actions builds Windows release artifacts from the workflow in `.github/wo
 - Pushes and pull requests upload build artifacts.
 - Tags that start with `v`, such as `v0.1.0`, also publish GitHub Release assets.
 
+See `docs/release-checklist.md` for the release flow and verification steps.
+
 ## Constraints
 
 - Windows only in V1
