@@ -1,6 +1,6 @@
 import { ListView } from "std-widgets.slint";
 import { TableViewRow } from "table-view-row.slint";
-import { TableViewColumnData } from "table-view-types.slint";
+import { TableViewColumnData } from "table-view.types.slint";
 import { TableViewStyle, ColumnDividerStyle } from "table-view.style.slint";
 import { AppPalette } from "../theme.slint";
 
@@ -17,7 +17,9 @@ export component TableView inherits Rectangle {
                 property <length> col_width: col.width == 0 ? TableViewStyle.default_col_width : col.width;
                 width: col_width;
 
-                Text {
+                header_label := Text {
+                    width: parent.width;
+                    horizontal-alignment: TextHorizontalAlignment.start;
                     overflow: TextOverflow.elide;
                     text: col.header;
                 }
@@ -46,7 +48,7 @@ export component TableView inherits Rectangle {
                 }
             }
 
-            Rectangle {
+            col_spacer := Rectangle {
                 horizontal-stretch: 1;
                 background: transparent;
             }

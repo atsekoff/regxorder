@@ -12,18 +12,14 @@ import { TableView } from "../components/table-view.slint";
 
 export component EditorView inherits Rectangle {
 
-    in property <string> session_directory;
-    in property <string> library_summary;
     in property <bool> has_recordings: false;
     in property <[string]> recording_titles: [];
     in property <int> selected_recording_index: -1;
     in property <string> selected_recording_title;
-    in property <string> editor_summary;
     in property <[string]> event_index_labels: [];
     in property <[string]> event_type_labels: [];
     in property <[string]> event_parameter_labels: [];
     in property <[string]> event_duration_labels: [];
-    in property <bool> can_delete_visible_events: false;
     in property <bool> filter_key_events_selected: true;
     in property <bool> filter_mouse_button_events_selected: true;
     in property <bool> filter_mouse_wheel_events_selected: true;
@@ -35,18 +31,11 @@ export component EditorView inherits Rectangle {
     in property <bool> can_save_editor_changes: false;
     in property <bool> can_revert_editor_changes: false;
     in property <bool> can_delete_selected_recording: false;
-    in property <string> selected_recording_details;
-    in property <string> playback_execution_status;
-    in property <string> playback_summary;
-    in property <string> playback_checks;
-    in property <bool> has_invalid_recordings: false;
-    in property <string> invalid_recordings_summary;
     callback refresh_library_requested();
     callback select_recording_requested(index: int);
     callback delete_selected_recording_requested();
     callback save_editor_changes_requested();
     callback revert_editor_changes_requested();
-    callback delete_visible_event_requested(index: int);
     callback filter_key_events_requested(enabled: bool);
     callback filter_mouse_button_events_requested(enabled: bool);
     callback filter_mouse_wheel_events_requested(enabled: bool);

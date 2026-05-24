@@ -37,58 +37,6 @@ pub(super) fn build_recording_title_items(
         .collect()
 }
 
-pub(super) fn build_recording_subtitle_items(
-    recording_library: &RecordingLibraryState,
-) -> Vec<SharedString> {
-    if recording_library.recordings.is_empty() {
-        return vec![SharedString::from(
-            "Start a recording or place a JSON session in the shared sessions folder, then refresh.",
-        )];
-    }
-
-    recording_library
-        .recordings
-        .iter()
-        .map(|recording| {
-            SharedString::from(format!(
-                "{} · {} · {} events",
-                recording
-                    .path
-                    .file_name()
-                    .and_then(|file_name| file_name.to_str())
-                    .unwrap_or("<unnamed recording>"),
-                format_duration(recording.recording.duration().as_micros()),
-                recording.recording.event_count(),
-            ))
-        })
-        .collect()
-}
-
-pub(super) fn build_invalid_recordings_summary(
-    recording_library: &RecordingLibraryState,
-) -> String {
-    if recording_library.invalid_recordings.is_empty() {
-        return String::new();
-    }
-
-    recording_library
-        .invalid_recordings
-        .iter()
-        .map(|invalid_recording| {
-            format!(
-                "{}: {}",
-                invalid_recording
-                    .path
-                    .file_name()
-                    .and_then(|file_name| file_name.to_str())
-                    .unwrap_or("<unnamed recording>"),
-                invalid_recording.reason,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 pub(super) fn build_selected_recording_sections(
     editing_session: Option<&EditingSession>,
 ) -> (String, String, String, String) {

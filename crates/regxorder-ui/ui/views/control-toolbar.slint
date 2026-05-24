@@ -14,16 +14,11 @@ export component ControlToolbar inherits Rectangle {
         speed_control.commit_pending();
     }
 
-    in property <string> toolbar_status_label;
-    in property <string> toolbar_file_label;
-    in property <string> toolbar_detail_label;
     in property <bool> can_start_recording: true;
     in property <bool> can_stop_active_action: false;
     in property <bool> can_play_selected_recording: false;
-    in property <bool> playback_is_running: false;
     in property <string> playback_loop_input_text: "1";
     in property <string> playback_speed_input_text: "1.0";
-    in property <string> playback_speed_validation_message: "";
     callback start_recording_requested();
     callback stop_active_action_requested();
     callback play_selected_recording_requested();

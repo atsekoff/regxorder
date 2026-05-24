@@ -209,20 +209,3 @@ pub(super) fn build_event_duration_items(
         .map(|row| SharedString::from(row.duration_label.clone()))
         .collect()
 }
-
-pub(super) fn selected_visible_event_index(
-    editing_session: Option<&EditingSession>,
-    visible_event_rows: &[VisibleEventRow],
-) -> i32 {
-    let Some(selected_event_index) =
-        editing_session.and_then(|session| session.selected_event_index)
-    else {
-        return -1;
-    };
-
-    visible_event_rows
-        .iter()
-        .position(|row| row.source_event_index == selected_event_index)
-        .map(|index| index as i32)
-        .unwrap_or(-1)
-}

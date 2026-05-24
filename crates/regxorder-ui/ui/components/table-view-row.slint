@@ -1,15 +1,23 @@
 import { AppPalette } from "../theme.slint";
 import { TableViewStyle } from "table-view.style.slint";
-import { TableViewColumnData } from "table-view-types.slint";
+import { TableViewColumnData } from "table-view.types.slint";
 
 export component TableViewRow inherits Rectangle {
-    in property <[TableViewColumnData]> cols: [];
+    in property <[TableViewColumnData]> cols: [
+        {
+            header: "Default header",
+            values: ["Default value"],
+            width: 100px,
+            min_width: 50px,
+            max_width: 200px,
+            resizable: true,
+        }
+    ];
     in property <int> row_index: 0;
 
-    height: 40px;
+    height: 30px;
 
     HorizontalLayout {
-        spacing: 0px;
 
         for col[idx] in root.cols: Rectangle {
             property <length> col_width: col.width == 0 ? TableViewStyle.default_col_width : col.width;
@@ -19,14 +27,15 @@ export component TableViewRow inherits Rectangle {
             clip: true;
 
             Text {
-                horizontal-alignment: TextHorizontalAlignment.left;
-                vertical-alignment: TextVerticalAlignment.bottom;
+                width: parent.width;
+                horizontal-alignment: TextHorizontalAlignment.start;
+                vertical-alignment: TextVerticalAlignment.top;
                 overflow: TextOverflow.elide;
                 text: col.values[root.row_index];
             }
         }
 
-        Rectangle {
+        coL_spacer := Rectangle {
             horizontal-stretch: 1;
             background: transparent;
         }

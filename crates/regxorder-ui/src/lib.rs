@@ -24,13 +24,12 @@ use regxorder_win32::{ControlController, RecordingStrategy, diagnose_windows_env
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 use crate::event_list::{
-    EventListFilter, VisibleEventRow, build_event_duration_items, build_event_filter_counts,
+    EventListFilter, build_event_duration_items, build_event_filter_counts,
     build_event_index_items, build_event_parameter_items, build_event_type_items,
-    build_visible_event_rows, selected_visible_event_index, visible_event_source_indices,
+    build_visible_event_rows, visible_event_source_indices,
 };
 use crate::recording_presentation::{
-    build_invalid_recordings_summary, build_recording_subtitle_items, build_recording_title_items,
-    build_selected_recording_sections, display_title_for_recording,
+    build_recording_title_items, build_selected_recording_sections, display_title_for_recording,
 };
 
 const SESSION_DIRECTORY_NAME: &str = "sessions";
@@ -84,9 +83,6 @@ impl Default for AppConfiguration {
 
 #[derive(Debug, Clone)]
 struct DesktopShellState {
-    toolbar_status_label: SharedString,
-    toolbar_file_label: SharedString,
-    toolbar_detail_label: SharedString,
     show_editor_view: bool,
     show_diagnostics_view: bool,
     show_settings_view: bool,
@@ -94,29 +90,20 @@ struct DesktopShellState {
     diagnostics_tab_selected: bool,
     settings_tab_selected: bool,
     session_directory: SharedString,
-    library_summary: SharedString,
     has_recordings: bool,
     recording_titles: ModelRc<SharedString>,
-    recording_subtitles: ModelRc<SharedString>,
     selected_recording_index: i32,
-    has_invalid_recordings: bool,
-    invalid_recordings_summary: SharedString,
     selected_recording_title: SharedString,
     selected_recording_details: SharedString,
     playback_controls_summary: SharedString,
-    playback_execution_status: SharedString,
     playback_summary: SharedString,
     playback_checks: SharedString,
     playback_loop_input_text: SharedString,
     playback_speed_input_text: SharedString,
-    playback_speed_validation_message: SharedString,
     event_index_labels: ModelRc<SharedString>,
     event_type_labels: ModelRc<SharedString>,
     event_parameter_labels: ModelRc<SharedString>,
     event_duration_labels: ModelRc<SharedString>,
-    selected_event_index: i32,
-    editor_summary: SharedString,
-    can_delete_visible_events: bool,
     filter_key_events_selected: bool,
     filter_mouse_button_events_selected: bool,
     filter_mouse_wheel_events_selected: bool,
@@ -132,24 +119,12 @@ struct DesktopShellState {
     stop_hotkey_win_selected: bool,
     stop_hotkey_key_index: i32,
     stop_hotkey_key_label: SharedString,
-    selected_event_label: SharedString,
-    selected_event_detail: SharedString,
-    selected_event_toggle_label: SharedString,
     can_start_recording: bool,
     can_play_selected_recording: bool,
     can_stop_active_action: bool,
     can_save_editor_changes: bool,
     can_revert_editor_changes: bool,
     can_delete_selected_recording: bool,
-    can_duplicate_selected_event: bool,
-    can_delete_selected_event: bool,
-    can_toggle_selected_event_state: bool,
-    can_nudge_selected_event_earlier: bool,
-    can_nudge_selected_event_later: bool,
-    playback_is_running: bool,
-    speed_half_selected: bool,
-    speed_normal_selected: bool,
-    speed_fast_selected: bool,
     recording_strategy_raw_selected: bool,
     recording_strategy_low_level_selected: bool,
     diagnostics_summary: SharedString,
@@ -262,31 +237,16 @@ struct InvalidRecordingEntry {
 impl DesktopShellState {
     fn from_model(model: &DesktopShellModel) -> Self {
         let recording_count = model.recording_library.recordings.len();
-        let invalid_count = model.recording_library.invalid_recordings.len();
         let selected_loop_count = model.selected_playback_loop_count;
         let selected_speed = model.selected_playback_speed.get();
         let action_running = model.is_action_running();
-        let playback_is_running = matches!(
-            model.action_execution_state,
-            ActionExecutionState::PlaybackRunning { .. }
-        );
-        let stop_requested = model.stop_requested();
-        let (action_status_title, action_status_detail) =
-            action_header_status(&model.action_execution_state, stop_requested);
         let editor_is_dirty = model.editor_has_unsaved_changes();
-        let selected_event_available = model
-            .editing_session
-            .as_ref()
-            .and_then(EditingSession::selected_event)
-            .is_some();
         let (
             selected_recording_title,
             selected_recording_details,
             playback_summary,
             playback_checks,
         ) = build_selected_recording_sections(model.editing_session.as_ref());
-        let (selected_event_label, selected_event_detail) =
-            build_selected_event_sections(model.editing_session.as_ref());
         let visible_event_rows =
             build_visible_event_rows(model.editing_session.as_ref(), model.event_list_filter);
         let event_filter_counts = build_event_filter_counts(model.editing_session.as_ref());
@@ -295,17 +255,9 @@ impl DesktopShellState {
             &playback_summary,
             &playback_checks,
         );
-        let selected_event_toggle_label = model.selected_event_toggle_label();
-        let selected_event_can_toggle_state = model.selected_event_supports_state_toggle();
         let stop_hotkey = &model.configuration.stop_action_hotkey;
 
         Self {
-            toolbar_status_label: SharedString::from(build_toolbar_status_label(
-                &model.action_execution_state,
-                editor_is_dirty,
-            )),
-            toolbar_file_label: SharedString::from(format!("File: {}", model.current_file_label())),
-            toolbar_detail_label: SharedString::from(action_status_detail),
             show_editor_view: model.active_view == ActiveView::Editor,
             show_diagnostics_view: model.active_view == ActiveView::Diagnostics,
             show_settings_view: model.active_view == ActiveView::Settings,
@@ -316,13 +268,8 @@ impl DesktopShellState {
                 "Sessions directory: {}",
                 model.recording_library.session_directory.display()
             )),
-            library_summary: SharedString::from(build_library_summary(&model.recording_library)),
             has_recordings: recording_count > 0,
             recording_titles: Rc::new(VecModel::from(build_recording_title_items(
-                &model.recording_library,
-            )))
-            .into(),
-            recording_subtitles: Rc::new(VecModel::from(build_recording_subtitle_items(
                 &model.recording_library,
             )))
             .into(),
@@ -331,10 +278,6 @@ impl DesktopShellState {
                 .selected_recording_index
                 .map(|index| index as i32)
                 .unwrap_or(-1),
-            has_invalid_recordings: invalid_count > 0,
-            invalid_recordings_summary: SharedString::from(build_invalid_recordings_summary(
-                &model.recording_library,
-            )),
             selected_recording_title: SharedString::from(selected_recording_title),
             selected_recording_details: SharedString::from(selected_recording_details),
             playback_controls_summary: SharedString::from(format!(
@@ -344,17 +287,10 @@ impl DesktopShellState {
                 selected_loop_count,
                 compact_process_elevation_status(&model.environment_report)
             )),
-            playback_execution_status: SharedString::from(action_status_title),
             playback_summary: SharedString::from(playback_summary),
             playback_checks: SharedString::from(playback_checks),
             playback_loop_input_text: SharedString::from(model.playback_loop_input_text.clone()),
             playback_speed_input_text: SharedString::from(model.playback_speed_input_text.clone()),
-            playback_speed_validation_message: SharedString::from(
-                model
-                    .playback_speed_validation_message
-                    .clone()
-                    .unwrap_or_default(),
-            ),
             event_index_labels: Rc::new(VecModel::from(build_event_index_items(
                 model.editing_session.as_ref(),
                 &visible_event_rows,
@@ -375,16 +311,6 @@ impl DesktopShellState {
                 &visible_event_rows,
             )))
             .into(),
-            selected_event_index: selected_visible_event_index(
-                model.editing_session.as_ref(),
-                &visible_event_rows,
-            ),
-            editor_summary: SharedString::from(build_editor_summary(
-                model.editing_session.as_ref(),
-                recording_count,
-                &visible_event_rows,
-            )),
-            can_delete_visible_events: !action_running && !visible_event_rows.is_empty(),
             filter_key_events_selected: model.event_list_filter.show_key_events,
             filter_mouse_button_events_selected: model.event_list_filter.show_mouse_button_events,
             filter_mouse_wheel_events_selected: model.event_list_filter.show_mouse_wheel_events,
@@ -413,9 +339,6 @@ impl DesktopShellState {
             stop_hotkey_win_selected: stop_hotkey.modifiers().contains(&HotkeyModifier::Win),
             stop_hotkey_key_index: hotkey_key_index(stop_hotkey.key()),
             stop_hotkey_key_label: SharedString::from(stop_hotkey.key().display_name()),
-            selected_event_label: SharedString::from(selected_event_label),
-            selected_event_detail: SharedString::from(selected_event_detail),
-            selected_event_toggle_label: SharedString::from(selected_event_toggle_label),
             can_start_recording: !action_running && !editor_is_dirty,
             can_play_selected_recording: model.editable_recording().is_some()
                 && !action_running
@@ -426,15 +349,6 @@ impl DesktopShellState {
             can_delete_selected_recording: model.recording_library.selected_recording().is_some()
                 && !action_running
                 && !editor_is_dirty,
-            can_duplicate_selected_event: selected_event_available && !action_running,
-            can_delete_selected_event: selected_event_available && !action_running,
-            can_toggle_selected_event_state: selected_event_can_toggle_state && !action_running,
-            can_nudge_selected_event_earlier: selected_event_available && !action_running,
-            can_nudge_selected_event_later: selected_event_available && !action_running,
-            playback_is_running,
-            speed_half_selected: (selected_speed - 0.5).abs() < f64::EPSILON,
-            speed_normal_selected: (selected_speed - 1.0).abs() < f64::EPSILON,
-            speed_fast_selected: (selected_speed - 2.0).abs() < f64::EPSILON,
             recording_strategy_raw_selected: model.configuration.recording_strategy
                 == RecordingStrategy::RawInput,
             recording_strategy_low_level_selected: model.configuration.recording_strategy
@@ -449,9 +363,6 @@ impl DesktopShellState {
     }
 
     fn apply_to(&self, window: &AppWindow) {
-        window.set_toolbar_status_label(self.toolbar_status_label.clone());
-        window.set_toolbar_file_label(self.toolbar_file_label.clone());
-        window.set_toolbar_detail_label(self.toolbar_detail_label.clone());
         window.set_show_editor_view(self.show_editor_view);
         window.set_show_diagnostics_view(self.show_diagnostics_view);
         window.set_show_settings_view(self.show_settings_view);
@@ -459,30 +370,20 @@ impl DesktopShellState {
         window.set_diagnostics_tab_selected(self.diagnostics_tab_selected);
         window.set_settings_tab_selected(self.settings_tab_selected);
         window.set_session_directory(self.session_directory.clone());
-        window.set_library_summary(self.library_summary.clone());
         window.set_has_recordings(self.has_recordings);
         window.set_recording_titles(self.recording_titles.clone());
-        window.set_recording_subtitles(self.recording_subtitles.clone());
         window.set_selected_recording_index(self.selected_recording_index);
-        window.set_has_invalid_recordings(self.has_invalid_recordings);
-        window.set_invalid_recordings_summary(self.invalid_recordings_summary.clone());
         window.set_selected_recording_title(self.selected_recording_title.clone());
         window.set_selected_recording_details(self.selected_recording_details.clone());
         window.set_playback_controls_summary(self.playback_controls_summary.clone());
-        window.set_playback_execution_status(self.playback_execution_status.clone());
         window.set_playback_summary(self.playback_summary.clone());
         window.set_playback_checks(self.playback_checks.clone());
         window.set_playback_loop_input_text(self.playback_loop_input_text.clone());
         window.set_playback_speed_input_text(self.playback_speed_input_text.clone());
-        window
-            .set_playback_speed_validation_message(self.playback_speed_validation_message.clone());
         window.set_event_index_labels(self.event_index_labels.clone());
         window.set_event_type_labels(self.event_type_labels.clone());
         window.set_event_parameter_labels(self.event_parameter_labels.clone());
         window.set_event_duration_labels(self.event_duration_labels.clone());
-        window.set_selected_event_index(self.selected_event_index);
-        window.set_editor_summary(self.editor_summary.clone());
-        window.set_can_delete_visible_events(self.can_delete_visible_events);
         window.set_filter_key_events_selected(self.filter_key_events_selected);
         window.set_filter_mouse_button_events_selected(self.filter_mouse_button_events_selected);
         window.set_filter_mouse_wheel_events_selected(self.filter_mouse_wheel_events_selected);
@@ -504,24 +405,12 @@ impl DesktopShellState {
         window.set_stop_hotkey_win_selected(self.stop_hotkey_win_selected);
         window.set_stop_hotkey_key_index(self.stop_hotkey_key_index);
         window.set_stop_hotkey_key_label(self.stop_hotkey_key_label.clone());
-        window.set_selected_event_label(self.selected_event_label.clone());
-        window.set_selected_event_detail(self.selected_event_detail.clone());
-        window.set_selected_event_toggle_label(self.selected_event_toggle_label.clone());
         window.set_can_start_recording(self.can_start_recording);
         window.set_can_play_selected_recording(self.can_play_selected_recording);
         window.set_can_stop_active_action(self.can_stop_active_action);
         window.set_can_save_editor_changes(self.can_save_editor_changes);
         window.set_can_revert_editor_changes(self.can_revert_editor_changes);
         window.set_can_delete_selected_recording(self.can_delete_selected_recording);
-        window.set_can_duplicate_selected_event(self.can_duplicate_selected_event);
-        window.set_can_delete_selected_event(self.can_delete_selected_event);
-        window.set_can_toggle_selected_event_state(self.can_toggle_selected_event_state);
-        window.set_can_nudge_selected_event_earlier(self.can_nudge_selected_event_earlier);
-        window.set_can_nudge_selected_event_later(self.can_nudge_selected_event_later);
-        window.set_playback_is_running(self.playback_is_running);
-        window.set_speed_half_selected(self.speed_half_selected);
-        window.set_speed_normal_selected(self.speed_normal_selected);
-        window.set_speed_fast_selected(self.speed_fast_selected);
         window.set_recording_strategy_raw_selected(self.recording_strategy_raw_selected);
         window
             .set_recording_strategy_low_level_selected(self.recording_strategy_low_level_selected);
@@ -781,16 +670,6 @@ impl DesktopShellModel {
             .is_some_and(EditingSession::is_dirty)
     }
 
-    fn current_file_label(&self) -> String {
-        self.current_selected_path()
-            .and_then(|path| {
-                path.file_name()
-                    .and_then(|file_name| file_name.to_str())
-                    .map(ToOwned::to_owned)
-            })
-            .unwrap_or_else(|| String::from("No session"))
-    }
-
     fn current_recording_title(&self) -> Option<String> {
         self.editing_session
             .as_ref()
@@ -804,12 +683,6 @@ impl DesktopShellModel {
 
     fn is_action_running(&self) -> bool {
         self.current_action_stop_requested.is_some()
-    }
-
-    fn stop_requested(&self) -> bool {
-        self.current_action_stop_requested
-            .as_ref()
-            .is_some_and(|stop_requested| stop_requested.load(Ordering::SeqCst))
     }
 
     fn note_action_notice(&mut self, message: impl Into<String>) {
@@ -1037,19 +910,6 @@ impl DesktopShellModel {
         }
     }
 
-    fn selected_event_supports_state_toggle(&self) -> bool {
-        self.editing_session
-            .as_ref()
-            .is_some_and(EditingSession::selected_event_supports_state_toggle)
-    }
-
-    fn selected_event_toggle_label(&self) -> String {
-        self.editing_session
-            .as_ref()
-            .and_then(EditingSession::selected_event_toggle_label)
-            .unwrap_or_else(|| String::from("Toggle state"))
-    }
-
     fn sync_event_selection_to_filter(&mut self) {
         let visible_source_indices =
             visible_event_source_indices(self.editing_session.as_ref(), self.event_list_filter);
@@ -1108,11 +968,6 @@ impl EditingSession {
             .unwrap_or(0)
             .min(self.working_recording.events().len() - 1);
         self.selected_event_index = Some(clamped_index);
-    }
-
-    fn selected_event(&self) -> Option<&InputEvent> {
-        self.selected_event_index
-            .and_then(|index| self.working_recording.events().get(index))
     }
 
     fn delete_selected_event(&mut self) -> Result<(), String> {
@@ -1208,34 +1063,6 @@ impl EditingSession {
         let selected_event_index = self.selected_event_index;
         self.working_recording = self.original_recording.clone();
         self.select_event_clamped(selected_event_index);
-    }
-
-    fn selected_event_supports_state_toggle(&self) -> bool {
-        self.selected_event().is_some_and(|event| {
-            matches!(
-                event.action,
-                InputAction::KeyPressed { .. }
-                    | InputAction::KeyReleased { .. }
-                    | InputAction::MouseButtonPressed { .. }
-                    | InputAction::MouseButtonReleased { .. }
-            )
-        })
-    }
-
-    fn selected_event_toggle_label(&self) -> Option<String> {
-        let selected_event = self.selected_event()?;
-
-        Some(match &selected_event.action {
-            InputAction::KeyPressed { .. } => String::from("Switch to Key Up"),
-            InputAction::KeyReleased { .. } => String::from("Switch to Key Down"),
-            InputAction::MouseButtonPressed { button } => {
-                format!("Switch to {} Up", format_mouse_button(*button))
-            }
-            InputAction::MouseButtonReleased { button } => {
-                format!("Switch to {} Down", format_mouse_button(*button))
-            }
-            _ => String::from("Toggle state"),
-        })
     }
 }
 
@@ -1994,98 +1821,6 @@ fn rebuild_recording(
     Recording::new(metadata, resequenced_events).map_err(|error| error.to_string())
 }
 
-fn build_toolbar_status_label(
-    action_execution_state: &ActionExecutionState,
-    _editor_is_dirty: bool,
-) -> String {
-    let action_label = match action_execution_state {
-        ActionExecutionState::RecordingRunning { .. } => "Recording",
-        ActionExecutionState::PlaybackRunning { .. } => "Playing",
-        ActionExecutionState::Idle
-        | ActionExecutionState::Notice(_)
-        | ActionExecutionState::RecordingCompleted { .. }
-        | ActionExecutionState::RecordingFailed { .. }
-        | ActionExecutionState::PlaybackCompleted { .. }
-        | ActionExecutionState::PlaybackFailed { .. } => "Idle",
-    };
-
-    format!("Status: {action_label}")
-}
-
-fn build_library_summary(recording_library: &RecordingLibraryState) -> String {
-    if !recording_library.session_directory.exists() {
-        return format!(
-            "Sessions folder missing at {}",
-            recording_library.session_directory.display()
-        );
-    }
-
-    format!(
-        "{} recording(s) · {} invalid file(s)",
-        recording_library.recordings.len(),
-        recording_library.invalid_recordings.len()
-    )
-}
-
-fn build_selected_event_sections(editing_session: Option<&EditingSession>) -> (String, String) {
-    let Some(editing_session) = editing_session else {
-        return (
-            String::from("No event selected"),
-            String::from("Load a session to inspect one event at a time."),
-        );
-    };
-
-    let Some(selected_event) = editing_session.selected_event() else {
-        return (
-            String::from("No event selected"),
-            String::from("Select an event from the list to inspect or edit it."),
-        );
-    };
-
-    (
-        format!(
-            "#{} {}",
-            selected_event.sequence,
-            format_event_action_label(&selected_event.action)
-        ),
-        format!(
-            "Time {}\n{}\n{}",
-            format_elapsed_clock(selected_event.elapsed_time.as_micros()),
-            format_event_action_detail(&selected_event.action),
-            if editing_session.is_dirty() {
-                "Pending save"
-            } else {
-                "Saved state"
-            }
-        ),
-    )
-}
-
-fn build_editor_summary(
-    editing_session: Option<&EditingSession>,
-    recording_count: usize,
-    visible_event_rows: &[VisibleEventRow],
-) -> String {
-    let Some(editing_session) = editing_session else {
-        return if recording_count == 0 {
-            String::from("No sessions are available yet.")
-        } else {
-            String::from("Select a session to inspect or edit its events.")
-        };
-    };
-
-    format!(
-        "Event editor · {} visible / {} total · {}",
-        visible_event_rows.len(),
-        editing_session.working_recording.event_count(),
-        if editing_session.is_dirty() {
-            "unsaved changes"
-        } else {
-            "saved"
-        }
-    )
-}
-
 fn build_diagnostics_summary(
     report: &EnvironmentDoctorReport,
     editing_session: Option<&EditingSession>,
@@ -2188,32 +1923,6 @@ fn format_event_table_parameter_label(action: &InputAction) -> String {
     }
 }
 
-fn format_event_action_detail(action: &InputAction) -> String {
-    match action {
-        InputAction::KeyPressed { key } | InputAction::KeyReleased { key } => format!(
-            "scan {}{}{}",
-            key.scan_code.get(),
-            key.logical_name
-                .as_ref()
-                .map(|logical_name| format!(" · {}", logical_name))
-                .unwrap_or_default(),
-            if key.extended { " · extended" } else { "" }
-        ),
-        InputAction::PointerMoved { position } => format!(
-            "({}, {}) · norm {:.3}, {:.3}",
-            position.absolute.x,
-            position.absolute.y,
-            position.normalized.x.get(),
-            position.normalized.y.get(),
-        ),
-        InputAction::MouseButtonPressed { button }
-        | InputAction::MouseButtonReleased { button } => format_mouse_button(*button).to_string(),
-        InputAction::MouseWheelScrolled { axis, delta } => {
-            format!("{} axis · delta {}", format_scroll_axis(*axis), delta)
-        }
-    }
-}
-
 fn format_mouse_button(button: regxorder_core::MouseButton) -> &'static str {
     match button {
         regxorder_core::MouseButton::Left => "Left",
@@ -2241,93 +1950,6 @@ fn format_elapsed_clock(micros: u64) -> String {
     let hours = total_minutes / 60;
 
     format!("{hours:02}:{minutes:02}:{seconds:02}.{millis:03}")
-}
-
-fn action_header_status(
-    action_execution_state: &ActionExecutionState,
-    stop_requested: bool,
-) -> (String, String) {
-    match action_execution_state {
-        ActionExecutionState::Idle => (
-            String::from("Ready."),
-            String::from("Record a new session or play the selected one."),
-        ),
-        ActionExecutionState::Notice(message) => (String::from("Action notice."), message.clone()),
-        ActionExecutionState::RecordingRunning {
-            recording_title,
-            strategy,
-        } => (
-            if stop_requested {
-                format!("Stopping {recording_title}.")
-            } else {
-                format!("Recording {recording_title}.")
-            },
-            format!("Using {strategy}. Press Stop to finish and save the session."),
-        ),
-        ActionExecutionState::RecordingCompleted {
-            recording_title,
-            output_path,
-            event_count,
-            duration_micros,
-        } => (
-            format!("Saved {recording_title}."),
-            format!(
-                "{} event(s) over {} written to {}.",
-                event_count,
-                format_duration(*duration_micros),
-                output_path.display()
-            ),
-        ),
-        ActionExecutionState::RecordingFailed {
-            recording_title,
-            reason,
-        } => (
-            format!("Recording failed for {recording_title}."),
-            reason.clone(),
-        ),
-        ActionExecutionState::PlaybackRunning {
-            recording_title,
-            speed,
-        } => (
-            if stop_requested {
-                format!("Stopping playback for {recording_title}.")
-            } else {
-                format!("Playing {recording_title} at {}x.", speed.get())
-            },
-            String::from("The desktop shell stays responsive while playback runs."),
-        ),
-        ActionExecutionState::PlaybackCompleted {
-            recording_title,
-            speed,
-            interrupted,
-            dispatched_events,
-            elapsed_millis,
-        } => (
-            if *interrupted {
-                format!(
-                    "Playback interrupted for {recording_title} at {}x.",
-                    speed.get()
-                )
-            } else {
-                format!(
-                    "Playback completed for {recording_title} at {}x.",
-                    speed.get()
-                )
-            },
-            format!(
-                "{} event(s) were dispatched over {:.3} ms.",
-                dispatched_events, elapsed_millis
-            ),
-        ),
-        ActionExecutionState::PlaybackFailed {
-            recording_title,
-            speed,
-            reason,
-        } => (
-            format!("Playback failed for {recording_title} at {}x.", speed.get()),
-            reason.clone(),
-        ),
-    }
 }
 
 fn compact_process_elevation_status(report: &EnvironmentDoctorReport) -> String {
@@ -2540,16 +2162,14 @@ mod tests {
     use super::{
         DesktopShellModel, DesktopShellState, EventListFilter, InvalidRecordingEntry,
         RecordingLibraryEntry, RecordingLibraryState, build_diagnostic_checks_text,
-        build_recording_subtitle_items, build_recording_title_items, build_visible_event_rows,
-        display_title_for_recording, load_recording_entry,
+        build_recording_title_items, build_visible_event_rows, display_title_for_recording,
+        load_recording_entry,
     };
 
     #[test]
     fn shell_state_from_model_mentions_live_environment_status() {
         let state = DesktopShellState::from_model(&sample_model());
 
-        assert!(state.toolbar_status_label.to_string().contains("Status"));
-        assert!(state.speed_normal_selected);
         assert!(state.diagnostics_summary.to_string().contains("Status"));
     }
 
@@ -2571,11 +2191,8 @@ mod tests {
     fn recording_list_builders_return_titles_and_subtitles() {
         let model = sample_model();
         let recording_titles = build_recording_title_items(&model.recording_library);
-        let recording_subtitles = build_recording_subtitle_items(&model.recording_library);
 
         assert_eq!(recording_titles[0], SharedString::from("Alpha sample"));
-        assert!(recording_subtitles[0].to_string().contains("alpha.json"));
-        assert!(recording_subtitles[0].to_string().contains("40.000 ms"));
     }
 
     #[test]
